@@ -54,10 +54,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Get dependency container and initialize services
         container = get_dependency_container()
         
-        # Initialize vector database
-        logger.info("Setting up vector database...")
-        container.vector_db_repo.initialize()
-        
         # Create and store services in app state
         chat_service = container.get_chat_service()
         vector_store = container.vector_store

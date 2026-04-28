@@ -114,6 +114,10 @@ class DependencyContainer:
         # Vector DB repository
         self._vector_db_repo = VectorDBRepository(self._mongo_db)
         
+        # Initialize vector database indexes before using Tavily client
+        logger.info("Initializing vector database indexes...")
+        self._vector_db_repo.initialize()
+        
         # Embeddings service (mock for now)
         from src.services.embeddings import EmbeddingsService
         self._embeddings_service = EmbeddingsService(provider_type="mock")
