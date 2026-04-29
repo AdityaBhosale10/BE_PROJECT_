@@ -91,7 +91,7 @@ def create_app() -> FastAPI:
         Configured FastAPI application instance
     """
     app = FastAPI(
-        title="PickSmart Chatbot API",
+        title="ProductGPT API",
         description="Product recommendation chatbot with semantic search",
         version="1.0.0",
         lifespan=lifespan,

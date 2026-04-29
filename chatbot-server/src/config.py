@@ -55,7 +55,7 @@ class Config:
     @property
     def cohere_api_key(self) -> str:
         """Get Cohere API key from environment."""
-        return os.getenv("COHERE_API_KEY", "")
+        return os.getenv("CO_API_KEY", "")
     
     @property
     def mongo_username(self) -> str:
