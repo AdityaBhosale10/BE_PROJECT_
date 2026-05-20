@@ -46,8 +46,13 @@ async def send_message(
         JSON response with chat result
     """
     results = []
-    async for chunk in service.stream_chat(chat_message.message):
-        results.append(chunk)
+    try:
+        async for chunk in service.stream_chat(chat_message.message, session_id=chat_message.session_id):
+            results.append(chunk)
+    except TypeError:
+        # Backward-compatible with older IChatService implementations
+        async for chunk in service.stream_chat(chat_message.message):
+            results.append(chunk)
     return {"results": results}
 
 
@@ -69,8 +74,12 @@ async def stream_message(
     
     async def event_generator():
         try:
-            async for chunk in service.stream_chat(chat_message.message):
-                yield f"data: {chunk}\n\n"
+            try:
+                async for chunk in service.stream_chat(chat_message.message, session_id=chat_message.session_id):
+                    yield f"data: {chunk}\n\n"
+            except TypeError:
+                async for chunk in service.stream_chat(chat_message.message):
+                    yield f"data: {chunk}\n\n"
         except Exception as e:
             logger.error(f"Error in stream_message: {e}")
             error_response = {"type": "error", "message": str(e)}

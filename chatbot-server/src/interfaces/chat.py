@@ -4,6 +4,7 @@ Chat service interface.
 Defines abstract contract for chat service implementations.
 """
 from abc import ABC, abstractmethod
+from typing import Optional
 
 
 class IChatService(ABC):
@@ -41,12 +42,13 @@ class IChatService(ABC):
         pass
     
     @abstractmethod
-    async def stream_chat(self, query: str):
+    async def stream_chat(self, query: str, session_id: Optional[str] = None):
         """
         Stream chat response asynchronously.
         
         Args:
             query: User query
+            session_id: Optional session identifier for conversation memory
             
         Yields:
             Response chunks

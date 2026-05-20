@@ -23,7 +23,9 @@ from src.adapters.llm import GroqProvider
 from src.adapters.search import TavilyHybridSearchProvider, TavilySourceSearchProvider
 from src.adapters.vector import MongoDBVectorProvider
 from src.adapters.model_provider import CustomModelProvider, default_model_path
+from src.adapters.memory import RedisMemory
 from src.repositories import VectorDBRepository
+from src.repositories.faiss_repository import FaissRepository
 from src.services import ChatService, PromptMessage
 from src.services.vector_store import VectorStoreService
 
@@ -55,7 +57,8 @@ class Config:
     @property
     def cohere_api_key(self) -> str:
         """Get Cohere API key from environment."""
-        return os.getenv("CO_API_KEY", "")
+        # Backward compatible: support both COHERE_API_KEY and CO_API_KEY
+        return os.getenv("COHERE_API_KEY", "") or os.getenv("CO_API_KEY", "")
     
     @property
     def mongo_username(self) -> str:
@@ -76,6 +79,37 @@ class Config:
     def mongo_database(self) -> str:
         """Get MongoDB database name from environment."""
         return os.getenv("MONGO_DB_NAME", "picksmart")
+
+    @property
+    def faiss_dir(self) -> str:
+        """
+        Directory for FAISS artifacts (index + metadata).
+        """
+        return os.getenv("FAISS_DIR", os.path.join(os.getcwd(), "data", "faiss"))
+
+    @property
+    def embeddings_provider(self) -> str:
+        return os.getenv("EMBEDDINGS_PROVIDER", "sentence_transformers")
+
+    @property
+    def embeddings_model(self) -> str:
+        return os.getenv("EMBEDDINGS_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+    @property
+    def redis_url(self) -> str:
+        return os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+    @property
+    def use_mongo_vector(self) -> bool:
+        """
+        Keep MongoDB optional; default to enabled for backward compatibility.
+
+        Set `USE_MONGO_VECTOR=false` to fully disable MongoDB/Tavily wiring.
+        """
+        raw = os.getenv("USE_MONGO_VECTOR")
+        if raw is not None:
+            return raw.lower() in {"1", "true", "yes"}
+        return True
 
 
 class DependencyContainer:
@@ -102,42 +136,77 @@ class DependencyContainer:
         # LLM adapter
         self._llm_client = GroqProvider(api_key=self.config.groq_api_key)
         
-        # Vector database adapter
-        mongo_provider = MongoDBVectorProvider(
-            username=self.config.mongo_username,
-            password=self.config.mongo_password,
-            cluster=self.config.mongo_cluster,
-            database=self.config.mongo_database,
-        )
-        self._mongo_db = mongo_provider.get_database()
-        
-        # Vector DB repository
-        self._vector_db_repo = VectorDBRepository(self._mongo_db)
-        
-        # Initialize vector database indexes before using Tavily client
-        logger.info("Initializing vector database indexes...")
-        self._vector_db_repo.initialize()
-        
-        # Embeddings service (mock for now)
+        # Embeddings service (local by default)
         from src.services.embeddings import EmbeddingsService
-        self._embeddings_service = EmbeddingsService(provider_type="mock")
-        
-        # Vector store service
-        self._vector_store_service = VectorStoreService(
-            vector_db_repo=self._vector_db_repo,
-            embeddings_service=self._embeddings_service,
-        )
-        
-        # Search adapters
-        self._hybrid_search = TavilyHybridSearchProvider(
-            api_key=self.config.tavily_api_key,
-            mongo_db=self._mongo_db,
-            cohere_api_key=self.config.cohere_api_key,
-        )
-        
-        self._source_search = TavilySourceSearchProvider(
-            api_key=self.config.tavily_api_key,
-        )
+        emb_kwargs = {"provider_type": self.config.embeddings_provider}
+        if self.config.embeddings_provider == "sentence_transformers":
+            emb_kwargs["model_name"] = self.config.embeddings_model
+        if self.config.cohere_api_key:
+            emb_kwargs["api_key"] = self.config.cohere_api_key
+
+        # Keep unit tests (FakeEmbeddings) compatible by falling back
+        # when the patched EmbeddingsService doesn't accept extra kwargs.
+        try:
+            self._embeddings_service = EmbeddingsService(**emb_kwargs)
+        except TypeError:
+            self._embeddings_service = EmbeddingsService(provider_type=self.config.embeddings_provider)
+
+        # FAISS vector store (primary)
+        self._faiss_repo = FaissRepository(self.config.faiss_dir)
+
+        # Redis memory (optional, best-effort)
+        self._memory = None
+        try:
+            self._memory = RedisMemory(redis_url=self.config.redis_url)
+        except Exception as e:
+            logger.warning("Redis memory disabled (init failed): %s", e)
+
+        # Optional MongoDB + Tavily (kept as fallback / legacy path)
+        self._mongo_db = None
+        self._vector_db_repo = None
+        self._hybrid_search = None
+        self._source_search = None
+
+        if self.config.use_mongo_vector:
+            try:
+                mongo_provider = MongoDBVectorProvider(
+                    username=self.config.mongo_username,
+                    password=self.config.mongo_password,
+                    cluster=self.config.mongo_cluster,
+                    database=self.config.mongo_database,
+                )
+                self._mongo_db = mongo_provider.get_database()
+
+                self._vector_db_repo = VectorDBRepository(self._mongo_db)
+                logger.info("Initializing vector database indexes...")
+                self._vector_db_repo.initialize()
+
+                self._hybrid_search = TavilyHybridSearchProvider(
+                    api_key=self.config.tavily_api_key,
+                    mongo_db=self._mongo_db,
+                    cohere_api_key=self.config.cohere_api_key,
+                )
+                self._source_search = TavilySourceSearchProvider(api_key=self.config.tavily_api_key)
+            except Exception as e:
+                logger.warning("Mongo/Tavily path disabled (init failed): %s", e)
+                self._mongo_db = None
+                self._vector_db_repo = None
+                self._hybrid_search = None
+                self._source_search = None
+
+        # Vector store service (FAISS-first)
+        try:
+            self._vector_store_service = VectorStoreService(
+                vector_db_repo=self._vector_db_repo,
+                embeddings_service=self._embeddings_service,
+                faiss_repo=self._faiss_repo,
+            )
+        except TypeError:
+            # Unit tests may patch VectorStoreService with a fake that doesn't accept faiss_repo.
+            self._vector_store_service = VectorStoreService(
+                vector_db_repo=self._vector_db_repo,
+                embeddings_service=self._embeddings_service,
+            )
     
     @property
     def llm_client(self) -> LLMClientInterface:
@@ -147,11 +216,15 @@ class DependencyContainer:
     @property
     def hybrid_search(self) -> HybridSearchInterface:
         """Get hybrid search adapter."""
+        if self._hybrid_search is None:
+            raise RuntimeError("Hybrid search not configured. Set USE_MONGO_VECTOR=true and provide Tavily+Cohere+Mongo env vars.")
         return self._hybrid_search
     
     @property
     def source_search(self) -> ProductSourceSearchInterface:
         """Get source search adapter."""
+        if self._source_search is None:
+            raise RuntimeError("Source search not configured. Set USE_MONGO_VECTOR=true and provide Tavily env vars.")
         return self._source_search
     
     @property
@@ -167,6 +240,8 @@ class DependencyContainer:
     @property
     def vector_db_repo(self) -> VectorDBRepository:
         """Get vector database repository."""
+        if self._vector_db_repo is None:
+            raise RuntimeError("Mongo vector repository not configured.")
         return self._vector_db_repo
     
     def get_chat_service(self) -> IChatService:
@@ -186,8 +261,9 @@ class DependencyContainer:
             template=template,
             llm_client=self.llm_client,
             llm_model=self.model_provider.get_model_name(),
-            hybrid_search=self.hybrid_search,
-            source_search=self.source_search,
+            hybrid_search=self._hybrid_search,
+            source_search=self._source_search,
+            memory=self._memory,
         )
 
 

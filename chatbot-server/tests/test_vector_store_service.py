@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from src.services.vector_store import VectorStoreService
+from src.repositories.faiss_repository import FaissRepository
 
 
 class FakeEmbeddings:
@@ -42,7 +43,7 @@ class ErrorCollection(FakeCollection):
 
 def test_search_similar_builds_pipeline() -> None:
     collection = FakeCollection()
-    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings())
+    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings(), faiss_repo=None)
 
     results = service.search_similar(query="shoe", top_k=2, department="d1", region="r1")
 
@@ -53,7 +54,7 @@ def test_search_similar_builds_pipeline() -> None:
 
 def test_insert_vector_returns_id() -> None:
     collection = FakeCollection()
-    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings())
+    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings(), faiss_repo=None)
 
     result = service.insert_vector({"field": "value"})
 
@@ -62,7 +63,7 @@ def test_insert_vector_returns_id() -> None:
 
 def test_delete_document(monkeypatch) -> None:
     collection = FakeCollection()
-    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings())
+    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings(), faiss_repo=None)
 
     monkeypatch.setattr("src.services.vector_store.ObjectId", lambda value: value)
 
@@ -74,7 +75,7 @@ def test_delete_document(monkeypatch) -> None:
 
 def test_search_similar_handles_error() -> None:
     collection = ErrorCollection()
-    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings())
+    service = VectorStoreService(vector_db_repo=FakeRepo(collection), embeddings_service=FakeEmbeddings(), faiss_repo=None)
 
     results = service.search_similar(query="shoe")
 

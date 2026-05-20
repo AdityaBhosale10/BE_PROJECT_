@@ -7,6 +7,7 @@ import logging
 from typing import List
 
 import cohere
+from sentence_transformers import SentenceTransformer  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,9 @@ class EmbeddingsService:
         
         if provider_type == "cohere":
             self.client = cohere.Client(api_key=kwargs.get("api_key"))
+        elif provider_type == "sentence_transformers":
+            model_name = kwargs.get("model_name") or "sentence-transformers/all-MiniLM-L6-v2"
+            self.client = SentenceTransformer(model_name)
         elif provider_type == "mock":
             self.client = None
     
@@ -49,6 +53,8 @@ class EmbeddingsService:
             return self._mock_embed(text)
         elif self.provider_type == "cohere":
             return self._embed_cohere(text)
+        elif self.provider_type == "sentence_transformers":
+            return self._embed_sentence_transformers(text)
         else:
             raise ValueError(f"Unknown provider: {self.provider_type}")
     
@@ -62,10 +68,10 @@ class EmbeddingsService:
         Returns:
             List of embedding vectors
         """
-        embeddings = []
-        for text in texts:
-            embeddings.append(self.embed_text(text))
-        return embeddings
+        if self.provider_type == "sentence_transformers":
+            vectors = self.client.encode(texts, normalize_embeddings=True)
+            return vectors.astype("float32").tolist()
+        return [self.embed_text(text) for text in texts]
     
     def _mock_embed(self, text: str) -> List[float]:
         """
@@ -99,3 +105,7 @@ class EmbeddingsService:
             input_type="search_document",
         )
         return response.embeddings[0]
+
+    def _embed_sentence_transformers(self, text: str) -> List[float]:
+        vec = self.client.encode([text], normalize_embeddings=True)
+        return vec[0].astype("float32").tolist()

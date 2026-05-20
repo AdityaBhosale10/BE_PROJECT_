@@ -44,8 +44,8 @@ class SearchAgent:
     def __init__(self,
                  llm_model: str,
                  llm_client: LLMClientInterface,
-                 hybrid_search: HybridSearchInterface,
-                 source_search: ProductSourceSearchInterface,
+                 hybrid_search: Optional[HybridSearchInterface],
+                 source_search: Optional[ProductSourceSearchInterface],
                  checkpointer: Optional[Any] = None) -> None:
         """
         Initialize the search agent.
@@ -138,6 +138,9 @@ class SearchAgent:
         """
         products = []
 
+        if self.hybrid_search is None:
+            return {"relevant_products": ""}
+
         for query in state['revised_query']:
 
             query = f"find the specific product title from this product requirement: {query}"
@@ -191,7 +194,10 @@ class SearchAgent:
         analyze_result = json.loads(analyze_result)
 
         product_titles = [product["title"] for product in analyze_result["products"]]
-        product_sources = self.source_search.find_sources(product_titles)
+        if self.source_search is None:
+            product_sources = [{"image": "", "url": ""} for _ in product_titles]
+        else:
+            product_sources = self.source_search.find_sources(product_titles)
 
         for idx, product in enumerate(analyze_result["products"]):
             product["image"] = product_sources[idx].get("image", "")

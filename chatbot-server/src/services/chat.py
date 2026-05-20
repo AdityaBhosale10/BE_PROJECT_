@@ -11,6 +11,7 @@ from typing import Optional
 from src.interfaces import LLMClientInterface, HybridSearchInterface, ProductSourceSearchInterface, IChatService
 from src.services.search_agent import SearchAgent
 from src.services.prompt_messages import PromptMessage
+from src.adapters.memory.redis_memory import RedisMemory, ChatTurn
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -36,8 +37,9 @@ class ChatService(IChatService):
                  template: Optional[ChatPromptTemplate] = None,
                  llm_client: LLMClientInterface = None,
                  llm_model: str = "",
-                 hybrid_search: HybridSearchInterface = None,
-                 source_search: ProductSourceSearchInterface = None):
+                 hybrid_search: Optional[HybridSearchInterface] = None,
+                 source_search: Optional[ProductSourceSearchInterface] = None,
+                 memory: Optional[RedisMemory] = None):
         """
         Initialize chat service.
 
@@ -53,6 +55,7 @@ class ChatService(IChatService):
         self.llm_model = llm_model
         self.hybrid_search = hybrid_search
         self.source_search = source_search
+        self.memory = memory
         self.thread_id = str(uuid.uuid4())
 
     def query_llm(self, prompt: str, model: str) -> str:
@@ -90,7 +93,7 @@ class ChatService(IChatService):
         response = self.query_llm(prompt=relevance_prompt, model=self.llm_model)
         return response.lower().strip() == "relevant"
 
-    async def stream_chat(self, query: str):
+    async def stream_chat(self, query: str, session_id: Optional[str] = None):
         """
         Stream chat response as Server-Sent Events.
 
@@ -102,7 +105,16 @@ class ChatService(IChatService):
         Yields:
             JSON-encoded SSE events
         """
-        if not self.is_query_relevant(query):
+        # Load recent history from Redis (if configured)
+        history_text = ""
+        if session_id and self.memory:
+            history = self.memory.get_history(session_id, limit=12)
+            if history:
+                history_text = "\n".join([f"{t.role}: {t.content}" for t in history])
+
+        effective_query = query if not history_text else f"{history_text}\nuser: {query}"
+
+        if not self.is_query_relevant(effective_query):
             yield json.dumps({
                 "type": "result",
                 "data": {"default": PromptMessage.Default_Message}
@@ -128,9 +140,11 @@ class ChatService(IChatService):
             logger.info(f"Thread ID: {self.thread_id}")
             thread = {"configurable": {"thread_id": self.thread_id}}
 
-            async for chunk in agent.graph.astream(
-                {"user_query": query}, thread, stream_mode="updates"
-            ):
+            # Persist user turn early
+            if session_id and self.memory:
+                self.memory.append_turn(session_id, ChatTurn(role="user", content=query))
+
+            async for chunk in agent.graph.astream({"user_query": effective_query}, thread, stream_mode="updates"):
                 node_name = next(iter(chunk))
                 state_update = chunk[node_name]
 
@@ -141,6 +155,11 @@ class ChatService(IChatService):
                     })
 
                 if "result" in state_update:
+                    if session_id and self.memory:
+                        self.memory.append_turn(
+                            session_id,
+                            ChatTurn(role="assistant", content=json.dumps(state_update["result"])),
+                        )
                     yield json.dumps({
                         "type": "result",
                         "data": state_update["result"]

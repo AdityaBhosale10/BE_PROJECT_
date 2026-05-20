@@ -8,7 +8,9 @@ from typing import List, Dict, Optional
 
 from src.interfaces import IVectorStoreService
 from src.repositories.vector_db_repository import VectorDBRepository
+from src.repositories.faiss_repository import FaissRepository
 from src.services.embeddings import EmbeddingsService
+from src.services.faiss_vector_store import FaissVectorStoreService
 from bson import ObjectId
 
 logger = logging.getLogger(__name__)
@@ -24,9 +26,12 @@ class VectorStoreService(IVectorStoreService):
     Implements IVectorStoreService contract for dependency injection.
     """
     
-    def __init__(self, 
-                 vector_db_repo: VectorDBRepository,
-                 embeddings_service: EmbeddingsService):
+    def __init__(
+        self,
+        vector_db_repo: Optional[VectorDBRepository],
+        embeddings_service: EmbeddingsService,
+        faiss_repo: Optional[FaissRepository] = None,
+    ):
         """
         Initialize vector store service.
         
@@ -36,6 +41,7 @@ class VectorStoreService(IVectorStoreService):
         """
         self.repo = vector_db_repo
         self.embeddings = embeddings_service
+        self._faiss = FaissVectorStoreService(faiss_repo, embeddings_service) if faiss_repo else None
     
     def search_similar(self, 
                       query: str, 
@@ -54,6 +60,14 @@ class VectorStoreService(IVectorStoreService):
         Returns:
             List of similar documents with scores
         """
+        # Prefer FAISS if configured
+        if self._faiss is not None:
+            return self._faiss.search(query=query, top_k=top_k)
+
+        if self.repo is None:
+            logger.error("No vector store configured (FAISS repo missing and Mongo repo is None).")
+            return []
+
         # Generate embedding for query
         query_embedding = self.embeddings.embed_text(query)
         
@@ -105,6 +119,8 @@ class VectorStoreService(IVectorStoreService):
         Returns:
             Document ID
         """
+        if self.repo is None:
+            raise RuntimeError("insert_vector not supported without MongoDB repository")
         collection = self.repo.get_collection()
         result = collection.insert_one(vector_data)
         logger.info(f"Inserted vector document: {result.inserted_id}")
@@ -120,6 +136,8 @@ class VectorStoreService(IVectorStoreService):
         Returns:
             True if deleted, False if not found
         """
+        if self.repo is None:
+            return False
         collection = self.repo.get_collection()
         result = collection.delete_one({"_id": ObjectId(doc_id)})
         return result.deleted_count > 0

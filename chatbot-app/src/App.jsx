@@ -2,6 +2,28 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, ArrowUpRight, X } from "lucide-react";
 import "./App.css";
 
+function getSessionId() {
+  const key = "productgpt_session_id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+function normalizeProduct(p) {
+  // Backward + forward compatible with both old and new backend shapes
+  return {
+    title: p.title ?? p.name ?? "Product",
+    description: p.description ?? p.reason ?? "",
+    image: p.image ?? p.image_url ?? "",
+    url: p.url ?? p.source_url ?? "",
+    price: p.price ?? null,
+    source: p.source ?? null,
+  };
+}
+
 /* ── Product Detail Panel ────────────────────── */
 function ProductPanel({ product, onClose }) {
   useEffect(() => {
@@ -26,6 +48,9 @@ function ProductPanel({ product, onClose }) {
         )}
         <div className="panel-body">
           <h2 className="panel-title">{product.title}</h2>
+          {product.price != null && (
+            <div className="panel-price">Price: {product.price}</div>
+          )}
           {product.description && (
             <p className="panel-description">{product.description}</p>
           )}
@@ -56,6 +81,9 @@ function ProductCard({ product, onClick }) {
       )}
       <div className="product-card-body">
         <div className="product-card-title">{product.title}</div>
+        {product.price != null && (
+          <div className="product-card-meta">Price: {product.price}</div>
+        )}
         {product.description && (
           <div className="product-card-description">{product.description}</div>
         )}
@@ -92,6 +120,7 @@ function App() {
   const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
   const endpoint = "/api/chat/stream";
   const url = `${backendUrl}${endpoint}`;
+  const sessionId = useRef(getSessionId());
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
@@ -156,7 +185,7 @@ function App() {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: "user", message: input }),
+        body: JSON.stringify({ user: "user", message: input, session_id: sessionId.current }),
       });
 
       if (!res.ok) {
@@ -210,7 +239,8 @@ function App() {
             }
 
             if (response.products && response.products.length > 0) {
-              newMessages.push({ sender: "products", items: response.products });
+              const items = response.products.map(normalizeProduct);
+              newMessages.push({ sender: "products", items });
             }
 
             if (response.final) {

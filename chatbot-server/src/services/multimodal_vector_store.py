@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import logging
+from typing import Dict, List, Optional, Sequence
+
+import numpy as np
+
+from src.repositories.faiss_repository import FaissRepository
+from src.services.clip_embeddings import ClipEmbeddingsService
+from src.services.embeddings import EmbeddingsService
+
+logger = logging.getLogger(__name__)
+
+
+class MultimodalVectorStoreService:
+    """
+    Multimodal retrieval over:
+    - text embeddings (Sentence-Transformers) in FAISS
+    - image embeddings (CLIP) in FAISS
+
+    For now, we keep separate indexes and fuse results by weighted score.
+    """
+
+    def __init__(
+        self,
+        text_repo: FaissRepository,
+        image_repo: FaissRepository,
+        text_embeddings: EmbeddingsService,
+        clip_embeddings: ClipEmbeddingsService,
+    ) -> None:
+        self.text_repo = text_repo
+        self.image_repo = image_repo
+        self.text_embeddings = text_embeddings
+        self.clip_embeddings = clip_embeddings
+
+        self._text_index = None
+        self._image_index = None
+        self._products: Optional[List[dict]] = None
+
+    def _ensure_loaded(self) -> None:
+        if self._products is None or self._text_index is None or self._image_index is None:
+            self._text_index, self._products = self.text_repo.load()
+            self._image_index, _ = self.image_repo.load()
+
+    def rebuild(self, products: Sequence[dict], text_field: str = "name", image_field: str = "image_url") -> None:
+        # Text index
+        texts = [str(p.get(text_field) or "") for p in products]
+        tvec = np.asarray(self.text_embeddings.embed_texts(texts), dtype=np.float32)
+        text_index = self.text_repo.build_cosine_index(tvec)
+        self.text_repo.save(text_index, list(products))
+
+        # Image index (CLIP on image urls; skip missing urls by embedding the name text as fallback)
+        ivec_list = []
+        for p in products:
+            url = p.get(image_field) or ""
+            if url:
+                ivec_list.append(self.clip_embeddings.embed_image_url(url))
+            else:
+                ivec_list.append(self.clip_embeddings.embed_text(str(p.get(text_field) or "")))
+        ivec = np.asarray(ivec_list, dtype=np.float32)
+        image_index = self.image_repo.build_cosine_index(ivec)
+        self.image_repo.save(image_index, list(products))
+
+        self._text_index = text_index
+        self._image_index = image_index
+        self._products = list(products)
+        logger.info("Rebuilt multimodal indexes with %d products", len(products))
+
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        image_query_url: Optional[str] = None,
+        text_weight: float = 0.7,
+        image_weight: float = 0.3,
+        allowed_ids: Optional[set[int]] = None,
+    ) -> List[Dict]:
+        self._ensure_loaded()
+        assert self._products is not None
+        assert self._text_index is not None
+        assert self._image_index is not None
+
+        # Text search
+        qtext = np.asarray(self.text_embeddings.embed_text(query), dtype=np.float32)
+        tscores, tids = self.text_repo.search_cosine(self._text_index, qtext, top_k=top_k * 5)
+
+        # Image search (optional)
+        if image_query_url:
+            qimg = np.asarray(self.clip_embeddings.embed_image_url(image_query_url), dtype=np.float32)
+        else:
+            qimg = np.asarray(self.clip_embeddings.embed_text(query), dtype=np.float32)
+        iscores, iids = self.image_repo.search_cosine(self._image_index, qimg, top_k=top_k * 5)
+
+        fused: Dict[int, float] = {}
+        for score, idx in zip(tscores.tolist(), tids.tolist()):
+            if idx < 0:
+                continue
+            fused[idx] = fused.get(idx, 0.0) + text_weight * float(score)
+        for score, idx in zip(iscores.tolist(), iids.tolist()):
+            if idx < 0:
+                continue
+            fused[idx] = fused.get(idx, 0.0) + image_weight * float(score)
+
+        # Rank and emit
+        out: List[Dict] = []
+        for idx, score in sorted(fused.items(), key=lambda kv: kv[1], reverse=True):
+            if allowed_ids is not None and idx not in allowed_ids:
+                continue
+            if idx >= len(self._products):
+                continue
+            out.append({"similarityScore": float(score), "document": self._products[idx]})
+            if len(out) >= top_k:
+                break
+        return out
+

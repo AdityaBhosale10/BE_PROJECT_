@@ -21,3 +21,16 @@ urllib3==2.3.0
 cohere==5.14.0
 aiosqlite==0.20.0
 certifi>=2024.2.2
+
+# RAG (FAISS + local embeddings)
+numpy>=1.26.0
+pandas>=2.2.0
+faiss-cpu>=1.8.0
+sentence-transformers>=3.0.0
+
+# Multimodal (CLIP)
+pillow>=10.4.0
+open-clip-torch>=2.24.0
+
+# Memory
+redis>=5.0.0
