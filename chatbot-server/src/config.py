@@ -23,7 +23,6 @@ from src.adapters.llm import GroqProvider
 from src.adapters.search import TavilyHybridSearchProvider, TavilySourceSearchProvider
 from src.adapters.vector import MongoDBVectorProvider
 from src.adapters.model_provider import CustomModelProvider, default_model_path
-from src.adapters.memory import RedisMemory
 from src.repositories import VectorDBRepository
 from src.repositories.faiss_repository import FaissRepository
 from src.services import ChatService, PromptMessage
@@ -78,7 +77,7 @@ class Config:
     @property
     def mongo_database(self) -> str:
         """Get MongoDB database name from environment."""
-        return os.getenv("MONGO_DB_NAME", "picksmart")
+        return os.getenv("MONGO_DB_NAME", "productgpt")
 
     @property
     def faiss_dir(self) -> str:
@@ -154,12 +153,10 @@ class DependencyContainer:
         # FAISS vector store (primary)
         self._faiss_repo = FaissRepository(self.config.faiss_dir)
 
-        # Redis memory (optional, best-effort)
-        self._memory = None
-        try:
-            self._memory = RedisMemory(redis_url=self.config.redis_url)
-        except Exception as e:
-            logger.warning("Redis memory disabled (init failed): %s", e)
+        # Session memory (Redis with in-process fallback)
+        from src.adapters.memory.session_memory import SessionMemoryStore
+
+        self._memory = SessionMemoryStore(redis_url=self.config.redis_url)
 
         # Optional MongoDB + Tavily (kept as fallback / legacy path)
         self._mongo_db = None
@@ -232,6 +229,11 @@ class DependencyContainer:
         """Get model provider."""
         return self._model_provider
     
+    @property
+    def memory(self):
+        """Redis-backed session memory (optional)."""
+        return self._memory
+
     @property
     def vector_store(self) -> IVectorStoreService:
         """Get vector store service."""

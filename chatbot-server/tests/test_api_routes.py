@@ -57,6 +57,30 @@ def test_stream_message_returns_error_event() -> None:
     assert "error" in response.text
 
 
+class FakeMemory:
+    backend = "memory"
+
+    def get_history(self, session_id: str, limit: int = 20):
+        return [
+            type("T", (), {"role": "user", "content": "hi"})(),
+            type("T", (), {"role": "assistant", "content": '{"answer":"ok"}'})(),
+        ]
+
+
+def test_chat_history_endpoint() -> None:
+    app = FastAPI()
+    app.state.memory = FakeMemory()
+    app.include_router(router)
+
+    client = TestClient(app)
+    response = client.get("/api/chat/history", params={"session_id": "abc"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == "abc"
+    assert len(body["messages"]) == 2
+
+
 def test_health_check() -> None:
     app = FastAPI()
     app.include_router(router)

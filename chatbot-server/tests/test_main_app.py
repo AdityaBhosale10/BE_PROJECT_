@@ -17,6 +17,7 @@ class FakeContainer:
     def __init__(self):
         self.vector_db_repo = FakeVectorRepo()
         self.vector_store = "vector-store"
+        self.memory = None
 
     def get_chat_service(self):
         return "chat-service"

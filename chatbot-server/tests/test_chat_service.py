@@ -81,7 +81,7 @@ def test_stream_chat_emits_progress_and_result(monkeypatch) -> None:
     updates = [
         {"analyze_query": {}},
         {"search_online_shop": {}},
-        {"analyze_and_rank": {"result": {"final": {"message": "done"}}}},
+        {"search_product_source": {"result": {"final": {"message": "done"}}}},
     ]
 
     monkeypatch.setattr("src.services.chat.SearchAgent", lambda **kwargs: FakeSearchAgent(updates=updates))

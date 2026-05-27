@@ -1,5 +1,5 @@
 """
-PickSmart Chatbot Application.
+ProductGPT Chatbot Application.
 
 A production-ready chatbot application with semantic search capabilities
 for finding the best products online. Uses LLMs and vector search to

@@ -249,7 +249,7 @@ function App() {
     <div className="App">
       {!hideHeader && (
         <header className="App-header">
-          <h1>Product-GPT</h1>
+          <h1>ProductGPT</h1>
           <p className="subtitle">Find the right product, faster</p>
           <div className="suggestions">
             {SUGGESTIONS.map((text, i) => (

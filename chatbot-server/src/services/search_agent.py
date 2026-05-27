@@ -5,6 +5,7 @@ Implements the multi-step product search and analysis pipeline.
 """
 import json
 import logging
+import re
 from typing import Dict, List, Any, Optional
 
 from src.interfaces import LLMClientInterface, HybridSearchInterface, ProductSourceSearchInterface
@@ -71,8 +72,37 @@ class SearchAgent:
         graph.add_edge("analyze_query", "search_online_shop")
         graph.add_edge("search_online_shop", "analyze_and_rank")
         graph.add_edge("analyze_and_rank", "search_product_source")
-        graph.set_finish_point("analyze_and_rank")
+        graph.set_finish_point("search_product_source")
         self.graph = graph.compile(checkpointer=checkpointer)
+
+    @staticmethod
+    def _query_with_context(state: SearchAgentState) -> str:
+        query = state["user_query"]
+        context = state.get("conversation_context") or ""
+        if not context:
+            return query
+        return (
+            f"Conversation context:\n{context}\n\n"
+            f"Current user message:\n{query}"
+        )
+
+    @staticmethod
+    def _parse_analyze_result(raw: str) -> Dict[str, Any]:
+        text = raw.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```\s*$", "", text)
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict) and "products" in data:
+                return data
+        except json.JSONDecodeError:
+            logger.warning("Could not parse analyze_result as JSON; using fallback structure")
+        return {
+            "initial": {"message": raw[:800] if raw else "Processing your request."},
+            "products": [],
+            "final": {"message": raw[:800] if raw else "Here are recommendations based on your request."},
+        }
 
     def call_client(self, prompt: str) -> str:
         """
@@ -111,7 +141,7 @@ class SearchAgent:
         prompt = ChatPromptTemplate.from_messages(
             [
                 SystemMessage(content=PromptMessage.ANALYZE_QUERY_PROMPT),
-                HumanMessage(content=state['user_query'])
+                HumanMessage(content=self._query_with_context(state)),
             ]
         )
 
@@ -172,7 +202,10 @@ class SearchAgent:
         prompt = ChatPromptTemplate.from_messages([
             PromptMessage.ANALYZE_RANK_PROMPT,
             PromptMessage.ANALYZE_RANK_HUMAN_PROMPT
-        ]).invoke({"products": state["relevant_products"], "requirements": state["user_query"]}).to_string()
+        ]).invoke({
+            "products": state["relevant_products"],
+            "requirements": self._query_with_context(state),
+        }).to_string()
 
         return {"analyze_result": self.call_client(prompt)}
 
@@ -189,17 +222,18 @@ class SearchAgent:
         Returns:
             Dictionary with result field containing complete product information
         """
-        analyze_result = state["analyze_result"]
+        analyze_result = self._parse_analyze_result(state["analyze_result"])
 
-        analyze_result = json.loads(analyze_result)
-
-        product_titles = [product["title"] for product in analyze_result["products"]]
+        product_titles = [
+            product.get("title") or product.get("name") or ""
+            for product in analyze_result.get("products", [])
+        ]
         if self.source_search is None:
             product_sources = [{"image": "", "url": ""} for _ in product_titles]
         else:
             product_sources = self.source_search.find_sources(product_titles)
 
-        for idx, product in enumerate(analyze_result["products"]):
+        for idx, product in enumerate(analyze_result.get("products", [])):
             product["image"] = product_sources[idx].get("image", "")
             product["url"] = product_sources[idx].get("url", "")
         return {"result": analyze_result}

@@ -1,4 +1,4 @@
-<h1 align="center"> PickSmart 🛒 </h1>
+<h1 align="center"> ProductGPT </h1>
 <div align="center">
 <img alt="Langchain" src="https://img.shields.io/badge/-Langchain-013243?style=flat&logo=langchain&logoColor=white"> <img alt="Langgraph" src="https://img.shields.io/badge/-Langgraph-013243?style=flat&logo=Langgraph&logoColor=white"> <img alt="Tavily" src="https://img.shields.io/badge/-Tavily-231F20?style=flat&logo=Tavily&logoColor=white"> <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-%234ea94b.svg?style=flat&logo=mongodb&logoColor=white"><img alt="Tavily" src="https://img.shields.io/badge/-Groq-231F20?style=flat&logo=Groq&logoColor=white"><img alt="FastAPI" src="https://img.shields.io/badge/-Fastapi-009688?style=flat&logo=Fastapi&logoColor=white">
 </div>
@@ -12,10 +12,10 @@ AI-powered shopping assistant platform for real-time product search with context
 
 ![Demo](./assets/picksmart.png)
 
-![PickSmart Demo](./assets/picksmart-demo.gif)
+![ProductGPT Demo](./assets/picksmart-demo.gif)
 
 
-PickSmart is an AI-powered product discovery platform that leverages large language models and intelligent agents to provide real-time product search, contextual question-answering, and personalized product recommendations. The system integrates a Retrieval-Augmented Generation (RAG) architecture with a search agent, also known as Hybrid RAG, for product discovery across multiple e-commerce marketplaces.
+ProductGPT is an AI-powered product discovery platform that leverages large language models and intelligent agents to provide real-time product search, contextual question-answering, and personalized product recommendations. The system integrates a Retrieval-Augmented Generation (RAG) architecture with a search agent, also known as Hybrid RAG, for product discovery across multiple e-commerce marketplaces.
 
 
 ## 🚀 Features
@@ -45,7 +45,7 @@ PickSmart is an AI-powered product discovery platform that leverages large langu
 
 ## 📐System Architecture
 
-PickSmart employs a modern distributed architecture that combines frontend and backend services through containerized deployment. The system is designed for scalability, maintainability, and real-time responsiveness.
+ProductGPT employs a modern distributed architecture that combines frontend and backend services through containerized deployment. The system is designed for scalability, maintainability, and real-time responsiveness.
 
 ### Frontend Layer
 - **Framework**: React.js with TypeScript
@@ -98,7 +98,7 @@ The workflow follows a linear progression through these states, from which each 
 This project contains a Vite React frontend and a FastAPI backend.
 
 ```bash
-PickSmart
+ProductGPT
 ├── docker-compose.yaml             # Multi-service local deployment
 ├── LICENSE                         # Project license
 ├── README.md                       # Project documentation
@@ -203,8 +203,8 @@ The application supports containerized deployment using Docker and Docker Compos
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/phrugsa-limbunlom/PickSmart.git
-cd PickSmart
+git clone https://github.com/phrugsa-limbunlom/ProductGPT.git
+cd ProductGPT
 ```
 
 2. Create the network:
@@ -223,8 +223,8 @@ The application will be accessible at `localhost:3000`.
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/phrugsa-limbunlom/PickSmart.git
-cd PickSmart
+git clone https://github.com/phrugsa-limbunlom/ProductGPT.git
+cd ProductGPT
 ```
 
 2. Install backend dependencies:
@@ -258,12 +258,12 @@ npm run dev
 
 ### Quick Start with Docker
 
-The fastest way to get PickSmart running is with Docker Compose
+The fastest way to get ProductGPT running is with Docker Compose
 
 1. Clone the repository and navigate to the project
    ```bash
-   git clone https://github.com/phrugsa-limbunlom/PickSmart.git
-   cd PickSmart
+   git clone https://github.com/phrugsa-limbunlom/ProductGPT.git
+   cd ProductGPT
    ```
 
 2. Set up your environment variables (see Configuration section)
@@ -280,7 +280,7 @@ The fastest way to get PickSmart running is with Docker Compose
 
 ## 📚 API Documentation
 
-The PickSmart backend provides comprehensive REST API documentation through Swagger UI. Once the backend is running, navigate to `http://localhost:8000/docs` to explore all available endpoints.
+The ProductGPT backend provides comprehensive REST API documentation through Swagger UI. Once the backend is running, navigate to `http://localhost:8000/docs` to explore all available endpoints.
 
 Key API endpoints
 
@@ -359,4 +359,4 @@ If you encounter exit code 1 when running Docker Compose
 - Confirm rate limits have not been exceeded
 
 ## 📜 License
-PickSmart is released under the MIT License. See the [LICENSE](https://github.com/phrugsa-limbunlom/PickSmart/blob/main/LICENSE) file for more details.
+ProductGPT is released under the MIT License. See the [LICENSE](https://github.com/phrugsa-limbunlom/ProductGPT/blob/main/LICENSE) file for more details.

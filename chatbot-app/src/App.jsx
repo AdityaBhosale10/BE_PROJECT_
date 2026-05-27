@@ -1,19 +1,47 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Send, ArrowUpRight, X } from "lucide-react";
+import {
+  Send,
+  ArrowUpRight,
+  X,
+  Plus,
+  MessageSquare,
+  Trash2,
+  PanelLeftClose,
+  Menu,
+} from "lucide-react";
 import "./App.css";
 
-function getSessionId() {
-  const key = "productgpt_session_id";
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    localStorage.setItem(key, id);
+const STORAGE_KEY = "productgpt_conversations_v1";
+
+function createId() {
+  return crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { activeId: null, chats: [] };
+    const parsed = JSON.parse(raw);
+    return {
+      activeId: parsed.activeId ?? null,
+      chats: Array.isArray(parsed.chats) ? parsed.chats : [],
+    };
+  } catch {
+    return { activeId: null, chats: [] };
   }
-  return id;
+}
+
+function saveStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+function titleFromMessage(text) {
+  const t = (text || "").trim();
+  if (!t) return "New chat";
+  return t.length > 42 ? `${t.slice(0, 42)}…` : t;
 }
 
 function normalizeProduct(p) {
-  // Backward + forward compatible with both old and new backend shapes
   return {
     title: p.title ?? p.name ?? "Product",
     description: p.description ?? p.reason ?? "",
@@ -24,10 +52,67 @@ function normalizeProduct(p) {
   };
 }
 
+function responseToMessages(response) {
+  const out = [];
+  if (response.default) {
+    out.push({ text: response.default, sender: "bot", streaming: false });
+  }
+  if (response.initial?.message) {
+    out.push({
+      text: String(response.initial.message).replace(/^-+\s*/, ""),
+      sender: "bot",
+      streaming: false,
+    });
+  }
+  if (response.products?.length) {
+    out.push({ sender: "products", items: response.products.map(normalizeProduct) });
+  }
+  if (response.final?.message) {
+    out.push({
+      text: String(response.final.message).replace(/^-+\s*/, ""),
+      sender: "bot",
+      streaming: false,
+    });
+  }
+  if (response.answer) {
+    out.push({ text: response.answer, sender: "bot", streaming: false });
+  }
+  return out;
+}
+
+function parseAssistantContent(content) {
+  try {
+    const data = JSON.parse(content);
+    if (data && typeof data === "object") {
+      return responseToMessages(data);
+    }
+  } catch {
+    /* plain text */
+  }
+  if (content?.trim()) {
+    return [{ text: content, sender: "bot", streaming: false }];
+  }
+  return [];
+}
+
+function turnsToMessages(turns) {
+  const messages = [];
+  for (const turn of turns) {
+    if (turn.role === "user") {
+      messages.push({ text: turn.content, sender: "user" });
+    } else if (turn.role === "assistant") {
+      messages.push(...parseAssistantContent(turn.content));
+    }
+  }
+  return messages;
+}
+
 /* ── Product Detail Panel ────────────────────── */
 function ProductPanel({ product, onClose }) {
   useEffect(() => {
-    const handleKey = (e) => { if (e.key === "Escape") onClose(); };
+    const handleKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
@@ -48,19 +133,10 @@ function ProductPanel({ product, onClose }) {
         )}
         <div className="panel-body">
           <h2 className="panel-title">{product.title}</h2>
-          {product.price != null && (
-            <div className="panel-price">Price: {product.price}</div>
-          )}
-          {product.description && (
-            <p className="panel-description">{product.description}</p>
-          )}
+          {product.price != null && <div className="panel-price">Price: {product.price}</div>}
+          {product.description && <p className="panel-description">{product.description}</p>}
           {product.url && (
-            <a
-              href={product.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="panel-cta"
-            >
+            <a href={product.url} target="_blank" rel="noopener noreferrer" className="panel-cta">
               View product <ArrowUpRight size={15} />
             </a>
           )}
@@ -70,7 +146,6 @@ function ProductPanel({ product, onClose }) {
   );
 }
 
-/* ── Single Product Card ─────────────────────── */
 function ProductCard({ product, onClick }) {
   return (
     <div className="product-card" onClick={() => onClick(product)}>
@@ -81,9 +156,7 @@ function ProductCard({ product, onClick }) {
       )}
       <div className="product-card-body">
         <div className="product-card-title">{product.title}</div>
-        {product.price != null && (
-          <div className="product-card-meta">Price: {product.price}</div>
-        )}
+        {product.price != null && <div className="product-card-meta">Price: {product.price}</div>}
         {product.description && (
           <div className="product-card-description">{product.description}</div>
         )}
@@ -104,10 +177,82 @@ const SUGGESTIONS = [
   "Compact mirrorless cameras for travel",
 ];
 
-/* ── Main App ────────────────────────────────── */
+function ChatSidebar({
+  chats,
+  activeId,
+  onNewChat,
+  onSelectChat,
+  onDeleteChat,
+  collapsed,
+  onToggle,
+}) {
+  return (
+    <aside className={`sidebar ${collapsed ? "sidebar-collapsed" : ""}`}>
+      <div className="sidebar-top">
+        <button type="button" className="sidebar-brand" onClick={onNewChat}>
+          <span className="brand-mark">P</span>
+          {!collapsed && <span className="brand-text">ProductGPT</span>}
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onToggle}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <PanelLeftClose size={18} />
+        </button>
+      </div>
+
+      <button type="button" className="new-chat-btn" onClick={onNewChat}>
+        <Plus size={18} />
+        {!collapsed && <span>New chat</span>}
+      </button>
+
+      {!collapsed && (
+        <div className="sidebar-section-label">Chats</div>
+      )}
+
+      <nav className="chat-list" aria-label="Chat history">
+        {chats.length === 0 && !collapsed && (
+          <p className="sidebar-empty">No conversations yet</p>
+        )}
+        {chats.map((chat) => (
+          <div
+            key={chat.id}
+            className={`chat-list-item ${chat.id === activeId ? "active" : ""}`}
+          >
+            <button
+              type="button"
+              className="chat-list-button"
+              onClick={() => onSelectChat(chat.id)}
+              title={chat.title}
+            >
+              <MessageSquare size={16} className="chat-list-icon" />
+              {!collapsed && <span className="chat-list-title">{chat.title}</span>}
+            </button>
+            {!collapsed && (
+              <button
+                type="button"
+                className="chat-delete-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteChat(chat.id);
+                }}
+                aria-label="Delete chat"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
 function App() {
+  const [store, setStore] = useState(loadStore);
   const [messages, setMessages] = useState([]);
-  const [hideHeader, setHideHeader] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [progressMessage, setProgressMessage] = useState("");
@@ -115,38 +260,55 @@ function App() {
   const [streamingText, setStreamingText] = useState("");
   const [messageQueue, setMessageQueue] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSidebar, setMobileSidebar] = useState(false);
   const messagesEndRef = useRef(null);
 
   const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
-  const endpoint = "/api/chat/stream";
-  const url = `${backendUrl}${endpoint}`;
-  const sessionId = useRef(getSessionId());
+  const streamUrl = `${backendUrl}/api/chat/stream`;
+  const historyUrl = `${backendUrl}/api/chat/history`;
+
+  const activeChat = store.chats.find((c) => c.id === store.activeId);
+  const sessionId = store.activeId;
+  const showWelcome = messages.length === 0 && !loading;
+
+  const persistChat = useCallback((chatId, nextMessages, title) => {
+    setStore((prev) => {
+      const chats = prev.chats.map((c) => {
+        if (c.id !== chatId) return c;
+        return {
+          ...c,
+          messages: nextMessages,
+          title: title ?? c.title,
+          updatedAt: Date.now(),
+        };
+      });
+      const next = { ...prev, chats };
+      saveStore(next);
+      return next;
+    });
+  }, []);
 
   const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
-    if (messagesEndRef.current) {
-      scrollToBottom();
-    }
-  }, [messages]);
+    scrollToBottom();
+  }, [messages, loading]);
 
   useEffect(() => {
     if (messageQueue.length > 0 && streamingIndex === -1) {
       const nextMessage = messageQueue[0];
       setStreamingIndex(nextMessage.index);
       streamMessage(nextMessage.text, nextMessage.index);
-      setMessageQueue(prev => prev.slice(1));
+      setMessageQueue((prev) => prev.slice(1));
     }
   }, [messageQueue, streamingIndex]);
 
   const streamMessage = (message, index) => {
     const words = message.split(" ");
     let currentWord = 0;
-
     const streamInterval = setInterval(() => {
       if (currentWord <= words.length) {
         setStreamingText(words.slice(0, currentWord).join(" "));
@@ -155,46 +317,160 @@ function App() {
         clearInterval(streamInterval);
         setStreamingIndex(-1);
         setStreamingText("");
-        setMessages(prev => {
+        setMessages((prev) => {
           const updated = [...prev];
-          updated[index].text = message;
+          if (updated[index]) updated[index].text = message;
           return updated;
         });
       }
     }, 20);
   };
 
-  const handleClosePanel = useCallback(() => setSelectedProduct(null), []);
-
-  const handleSuggestionClick = (text) => {
-    setInput(text);
+  const fetchServerHistory = async (id) => {
+    if (!historyUrl) return [];
+    try {
+      const res = await fetch(`${historyUrl}?session_id=${encodeURIComponent(id)}&limit=80`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return turnsToMessages(data.messages || []);
+    } catch {
+      return [];
+    }
   };
+
+  const loadChat = useCallback(
+    async (chatId) => {
+      const chat = store.chats.find((c) => c.id === chatId);
+      if (!chat) return;
+
+      let nextMessages = chat.messages || [];
+      if (nextMessages.length === 0) {
+        nextMessages = await fetchServerHistory(chatId);
+        if (nextMessages.length > 0) {
+          persistChat(chatId, nextMessages, chat.title);
+        }
+      }
+
+      setMessages(nextMessages);
+      setStore((prev) => {
+        const next = { ...prev, activeId: chatId };
+        saveStore(next);
+        return next;
+      });
+      setMobileSidebar(false);
+    },
+    [store.chats, persistChat]
+  );
+
+  useEffect(() => {
+    if (store.activeId) {
+      loadChat(store.activeId);
+    } else {
+      setMessages([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleNewChat = () => {
+    const id = createId();
+    const chat = {
+      id,
+      title: "New chat",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    setStore((prev) => {
+      const next = {
+        activeId: id,
+        chats: [chat, ...prev.chats],
+      };
+      saveStore(next);
+      return next;
+    });
+    setMessages([]);
+    setInput("");
+    setMobileSidebar(false);
+  };
+
+  const handleSelectChat = (chatId) => {
+    if (chatId === store.activeId) {
+      setMobileSidebar(false);
+      return;
+    }
+    loadChat(chatId);
+  };
+
+  const handleDeleteChat = (chatId) => {
+    setStore((prev) => {
+      const chats = prev.chats.filter((c) => c.id !== chatId);
+      const wasActive = prev.activeId === chatId;
+      const nextActive = wasActive ? chats[0]?.id ?? null : prev.activeId;
+      const next = { activeId: nextActive, chats };
+      saveStore(next);
+
+      if (wasActive) {
+        if (nextActive) {
+          const chat = chats.find((c) => c.id === nextActive);
+          const local = chat?.messages || [];
+          if (local.length) {
+            setMessages(local);
+          } else {
+            fetchServerHistory(nextActive).then((msgs) => setMessages(msgs));
+          }
+        } else {
+          setMessages([]);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleClosePanel = useCallback(() => setSelectedProduct(null), []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
-    const userMessage = { text: input, sender: "user" };
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
+    let chatId = sessionId;
+    if (!chatId) {
+      chatId = createId();
+      const chat = {
+        id: chatId,
+        title: titleFromMessage(input),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: [],
+      };
+      setStore((prev) => {
+        const next = { activeId: chatId, chats: [chat, ...prev.chats] };
+        saveStore(next);
+        return next;
+      });
+    }
+
+    const userText = input.trim();
+    const userMessage = { text: userText, sender: "user" };
+    const messagesWithUser = [...messages, userMessage];
+    setMessages(messagesWithUser);
+    persistChat(chatId, messagesWithUser, titleFromMessage(userText));
     setInput("");
     setLoading(true);
-    setHideHeader(true);
     setProgressMessage("");
 
     try {
-      const res = await fetch(url, {
+      const res = await fetch(streamUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: "user", message: input, session_id: sessionId.current }),
+        body: JSON.stringify({ user: "user", message: userText, session_id: chatId }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let finalMessages = messagesWithUser;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -207,68 +483,63 @@ function App() {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
-
           if (raw === "[DONE]") break;
-
           if (raw.startsWith("[ERROR]")) {
-            setMessages(prev => [...prev, { text: raw.slice(8).trim(), sender: "error" }]);
+            finalMessages = [
+              ...finalMessages,
+              { text: raw.slice(8).trim(), sender: "error" },
+            ];
+            setMessages(finalMessages);
             break;
           }
 
-          const event = JSON.parse(raw);
+          let event;
+          try {
+            event = JSON.parse(raw);
+          } catch {
+            continue;
+          }
 
           if (event.type === "progress") {
             setProgressMessage(event.message);
           }
 
+          if (event.type === "error") {
+            setProgressMessage("");
+            finalMessages = [
+              ...finalMessages,
+              { text: event.message || "An error occurred.", sender: "error" },
+            ];
+            setMessages(finalMessages);
+            break;
+          }
+
           if (event.type === "result") {
             setProgressMessage("");
-            const response = event.data;
-            let newMessages = [];
+            const newMessages = responseToMessages(event.data).map((m) =>
+              m.sender === "bot" ? { ...m, streaming: true } : m
+            );
+            finalMessages = [...finalMessages, ...newMessages];
+            setMessages(finalMessages);
 
-            if (response.default) {
-              newMessages.push({ text: response.default, sender: "bot", streaming: true });
-            }
-
-            if (response.initial) {
-              newMessages.push({
-                text: response.initial.message.replace("-", ""),
-                sender: "bot",
-                streaming: true,
-              });
-            }
-
-            if (response.products && response.products.length > 0) {
-              const items = response.products.map(normalizeProduct);
-              newMessages.push({ sender: "products", items });
-            }
-
-            if (response.final) {
-              newMessages.push({
-                text: response.final.message.replace("-", ""),
-                sender: "bot",
-                streaming: true,
-              });
-            }
-
-            setMessages(prev => {
-              const updatedMessages = [...prev, ...newMessages];
-              const queuedMessages = newMessages
-                .map((msg, idx) => ({
-                  text: msg.text,
-                  index: prev.length + idx,
-                  streaming: msg.streaming,
-                }))
-                .filter(msg => msg.streaming && msg.text);
-              setMessageQueue(queuedMessages);
-              return updatedMessages;
-            });
+            const queuedMessages = newMessages
+              .map((msg, idx) => ({
+                text: msg.text,
+                index: finalMessages.length - newMessages.length + idx,
+                streaming: msg.streaming,
+              }))
+              .filter((msg) => msg.streaming && msg.text);
+            setMessageQueue(queuedMessages);
           }
         }
       }
+
+      persistChat(chatId, finalMessages);
     } catch (err) {
       console.error(err);
-      setMessages(prev => [...prev, { text: "An error occurred.", sender: "error" }]);
+      const withError = [...messagesWithUser, { text: "An error occurred.", sender: "error" }];
+      setMessages(withError);
+      persistChat(chatId, withError);
     } finally {
       setLoading(false);
       setProgressMessage("");
@@ -276,83 +547,105 @@ function App() {
   };
 
   return (
-    <div className="App">
-      {!hideHeader && (
-        <header className="App-header">
-          <h1>Product-GPT</h1>
-          <p className="subtitle">Find the right product, faster</p>
-          <div className="suggestions">
-            {SUGGESTIONS.map((text, i) => (
-              <button
-                key={i}
-                className="suggestion-chip"
-                onClick={() => handleSuggestionClick(text)}
-              >
-                {text}
-              </button>
-            ))}
-          </div>
-        </header>
-      )}
+    <div className="App layout">
+      {mobileSidebar && <div className="sidebar-backdrop" onClick={() => setMobileSidebar(false)} />}
 
-      <div className="chat-container">
-        <div className="messages">
-          {messages.map((message, index) =>
-            message.sender === "products" ? (
-              <div key={index} className="products-container">
-                {message.items.map((product, i) => (
-                  <ProductCard
+      <div className={`sidebar-wrap ${mobileSidebar ? "mobile-open" : ""}`}>
+        <ChatSidebar
+          chats={[...store.chats].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))}
+          activeId={store.activeId}
+          onNewChat={handleNewChat}
+          onSelectChat={handleSelectChat}
+          onDeleteChat={handleDeleteChat}
+          collapsed={!sidebarOpen}
+          onToggle={() => setSidebarOpen((v) => !v)}
+        />
+      </div>
+
+      <main className="main-panel">
+        <header className="top-bar">
+          <button
+            type="button"
+            className="icon-btn mobile-only"
+            onClick={() => setMobileSidebar(true)}
+            aria-label="Open menu"
+          >
+            <Menu size={20} />
+          </button>
+          <h1 className="top-bar-title">{activeChat?.title || "ProductGPT"}</h1>
+        </header>
+
+        <div className="chat-container">
+          {showWelcome && (
+            <div className="welcome">
+              <h2>How can I help you shop today?</h2>
+              <p className="welcome-sub">Ask about products, compare options, or get recommendations.</p>
+              <div className="suggestions">
+                {SUGGESTIONS.map((text, i) => (
+                  <button
                     key={i}
-                    product={product}
-                    onClick={setSelectedProduct}
-                  />
+                    type="button"
+                    className="suggestion-chip"
+                    onClick={() => setInput(text)}
+                  >
+                    {text}
+                  </button>
                 ))}
               </div>
-            ) : (
-              <div key={index} className={`message ${message.sender}`}>
-                {index === streamingIndex && message.streaming
-                  ? streamingText
-                  : message.text}
-              </div>
-            )
-          )}
-
-          {loading && (
-            <div className="progress-bubble">
-              <div className="typing-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-              {progressMessage && (
-                <span className="progress-label">{progressMessage}</span>
-              )}
             </div>
           )}
 
-          <div ref={messagesEndRef} />
-        </div>
+          <div className="messages">
+            {messages.map((message, index) =>
+              message.sender === "products" ? (
+                <div key={index} className="products-container">
+                  {message.items.map((product, i) => (
+                    <ProductCard key={i} product={product} onClick={setSelectedProduct} />
+                  ))}
+                </div>
+              ) : (
+                <div key={index} className={`message ${message.sender}`}>
+                  {index === streamingIndex && message.streaming ? streamingText : message.text}
+                </div>
+              )
+            )}
 
-        <form onSubmit={handleSubmit} className="input-form">
-          <div className="input-wrapper">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="What are you looking for?"
-              disabled={loading}
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              aria-label="Send message"
-              className="send-button"
-            >
-              <Send size={16} />
-            </button>
+            {loading && (
+              <div className="progress-bubble">
+                <div className="typing-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                {progressMessage && <span className="progress-label">{progressMessage}</span>}
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
-        </form>
-      </div>
+
+          <form onSubmit={handleSubmit} className="input-form">
+            <div className="input-wrapper">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Message ProductGPT…"
+                disabled={loading}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                aria-label="Send message"
+                className="send-button"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+            <p className="input-hint">ProductGPT remembers context within each chat when Redis is enabled.</p>
+          </form>
+        </div>
+      </main>
 
       <ProductPanel product={selectedProduct} onClose={handleClosePanel} />
     </div>

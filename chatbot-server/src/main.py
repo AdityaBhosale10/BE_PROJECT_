@@ -60,6 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         
         app.state.chat_service = chat_service
         app.state.vector_store = vector_store
+        app.state.memory = container.memory
         
         logger.info("Application initialized successfully")
         

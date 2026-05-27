@@ -2,3 +2,5 @@
 .env
 .env.*
 !.env.example
+chatbot-server/env
+.env

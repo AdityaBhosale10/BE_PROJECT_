@@ -1,5 +1,5 @@
 """
-File utility functions for PickSmart application.
+File utility functions for ProductGPT application.
 
 Contains static methods for common file operations like loading configuration files.
 """
@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Union
 
 class FileUtils:
     """
-    Utility class providing file operations for the PickSmart application.
+    Utility class providing file operations for the ProductGPT application.
     
     This class contains static methods for common file operations like
     loading configuration files in various formats.

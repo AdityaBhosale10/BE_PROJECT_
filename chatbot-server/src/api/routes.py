@@ -6,15 +6,22 @@ Provides RESTful endpoints for chat interactions and streaming responses.
 import logging
 import json
 
-from fastapi import APIRouter, Depends, Request
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 
 from src.models.schemas import ChatMessage
 from src.interfaces import IChatService
+from src.adapters.memory.session_memory import SessionMemoryStore
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+
+def get_memory(request: Request) -> Optional[SessionMemoryStore]:
+    return getattr(request.app.state, "memory", None)
 
 
 def get_chat_service(request: Request) -> IChatService:
@@ -86,6 +93,28 @@ async def stream_message(
             yield f"data: {json.dumps(error_response)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/chat/history")
+async def chat_history(
+    session_id: str = Query(..., description="Conversation session id"),
+    limit: int = Query(50, ge=1, le=200),
+    memory: Optional[SessionMemoryStore] = Depends(get_memory),
+):
+    """
+    Return stored chat turns for a session (Redis or in-process fallback).
+    """
+    if not session_id:
+        return {"session_id": session_id, "messages": []}
+    if memory is None:
+        return {"session_id": session_id, "messages": [], "memory": "disabled"}
+
+    turns = memory.get_history(session_id, limit=limit)
+    return {
+        "session_id": session_id,
+        "messages": [{"role": t.role, "content": t.content} for t in turns],
+        "memory": memory.backend,
+    }
 
 
 @router.get("/health")

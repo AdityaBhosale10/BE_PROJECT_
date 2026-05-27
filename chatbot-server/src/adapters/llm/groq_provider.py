@@ -60,3 +60,6 @@ class GroqProvider(LLMClientInterface):
         except requests.exceptions.HTTPError as e:
             logger.error("HTTP Error occurred: %s - %s", e.response.status_code, e.response.text)
             raise
+        except Exception as e:
+            logger.error("Groq API error: %s", e)
+            raise
