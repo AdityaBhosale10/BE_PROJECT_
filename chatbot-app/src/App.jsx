@@ -8,6 +8,11 @@ import {
   Trash2,
   PanelLeftClose,
   Menu,
+  ArrowLeft,
+  RefreshCw,
+  Edit2,
+  Download,
+  Sun,
 } from "lucide-react";
 import "./App.css";
 
@@ -98,10 +103,12 @@ function parseAssistantContent(content) {
 function turnsToMessages(turns) {
   const messages = [];
   for (const turn of turns) {
+    const idx = turns.indexOf(turn);
     if (turn.role === "user") {
-      messages.push({ text: turn.content, sender: "user" });
+      messages.push({ text: turn.content, sender: "user", turnIndex: idx });
     } else if (turn.role === "assistant") {
-      messages.push(...parseAssistantContent(turn.content));
+      const parsed = parseAssistantContent(turn.content).map((m) => ({ ...m, turnIndex: idx }));
+      messages.push(...parsed);
     }
   }
   return messages;
@@ -185,6 +192,8 @@ function ChatSidebar({
   onDeleteChat,
   collapsed,
   onToggle,
+  mobile,
+  onBack,
 }) {
   return (
     <aside className={`sidebar ${collapsed ? "sidebar-collapsed" : ""}`}>
@@ -196,10 +205,13 @@ function ChatSidebar({
         <button
           type="button"
           className="icon-btn"
-          onClick={onToggle}
+          onClick={() => {
+            if (mobile && typeof onBack === "function") return onBack();
+            return onToggle();
+          }}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          <PanelLeftClose size={18} />
+          {mobile ? <ArrowLeft size={18} /> : <PanelLeftClose size={18} />}
         </button>
       </div>
 
@@ -332,7 +344,23 @@ function App() {
       const res = await fetch(`${historyUrl}?session_id=${encodeURIComponent(id)}&limit=80`);
       if (!res.ok) return [];
       const data = await res.json();
-      return turnsToMessages(data.messages || []);
+      const msgs = turnsToMessages(data.messages || []);
+      // fetch reactions and attach
+      try {
+        const rres = await fetch(`${backendUrl}/api/chat/reactions?session_id=${encodeURIComponent(id)}`);
+        if (rres.ok) {
+          const map = await rres.json();
+          for (const m of msgs) {
+            if (m.turnIndex != null) {
+              const val = map[String(m.turnIndex)];
+              if (val) m.reaction = val;
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      return msgs;
     } catch {
       return [];
     }
@@ -369,6 +397,12 @@ function App() {
       setMessages([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const theme = localStorage.getItem("pgpt_theme") || "light";
+    if (theme === "dark") document.documentElement.classList.add("theme-dark");
+    else document.documentElement.classList.remove("theme-dark");
   }, []);
 
   const handleNewChat = () => {
@@ -559,6 +593,8 @@ function App() {
           onDeleteChat={handleDeleteChat}
           collapsed={!sidebarOpen}
           onToggle={() => setSidebarOpen((v) => !v)}
+          mobile={mobileSidebar}
+          onBack={() => setMobileSidebar(false)}
         />
       </div>
 
@@ -573,6 +609,177 @@ function App() {
             <Menu size={20} />
           </button>
           <h1 className="top-bar-title">{activeChat?.title || "ProductGPT"}</h1>
+          <div className="top-bar-actions">
+            <button
+              type="button"
+              className="icon-btn grouped"
+              onClick={async () => {
+                const current = await fetch(`${backendUrl}/api/model`).then((r) => r.json()).catch(() => ({}));
+                const newModel = window.prompt("Set model name:", current.model || "");
+                if (!newModel) return;
+                try {
+                  const res = await fetch(`${backendUrl}/api/model`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: newModel }),
+                  });
+                  if (res.ok) {
+                    alert(`Model set to ${newModel}`);
+                  } else {
+                    alert("Failed to set model");
+                  }
+                } catch (err) {
+                  console.error(err);
+                }
+              }}
+              title="Switch model"
+              aria-label="Model"
+            >
+              Model
+            </button>
+            <button
+              type="button"
+              className="icon-btn grouped"
+              onClick={() => {
+                const cur = localStorage.getItem("pgpt_theme") || "light";
+                const next = cur === "light" ? "dark" : "light";
+                localStorage.setItem("pgpt_theme", next);
+                document.documentElement.classList.toggle("theme-dark", next === "dark");
+              }}
+              title="Toggle theme"
+            >
+              Theme
+            </button>
+            <button
+              type="button"
+              className="icon-btn grouped"
+              onClick={async () => {
+                if (!sessionId) return;
+                try {
+                  const res = await fetch(`${backendUrl}/api/chat/regenerate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_id: sessionId, index: -1 }),
+                  });
+                  const data = await res.json();
+                  if (data.results) {
+                    // Merge result chunks into messages
+                    const merged = [];
+                    for (const chunk of data.results) {
+                      try {
+                        const ev = JSON.parse(chunk);
+                        if (ev.type === "result") {
+                          merged.push(...responseToMessages(ev.data));
+                        }
+                      } catch {}
+                    }
+                    const next = [...messages, ...merged];
+                    setMessages(next);
+                    persistChat(sessionId, next);
+                  }
+                } catch (err) {
+                  console.error(err);
+                }
+              }}
+              title="Regenerate last user message"
+              aria-label="Regenerate"
+              disabled={!sessionId || loading}
+            >
+              Regenerate
+            </button>
+
+            <button
+              type="button"
+              className="icon-btn grouped"
+              onClick={async () => {
+                if (!sessionId) return;
+                const newText = window.prompt("Edit last user message:");
+                if (!newText) return;
+                try {
+                  const res = await fetch(`${backendUrl}/api/chat/edit`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_id: sessionId, index: -1, new_message: newText }),
+                  });
+                  const data = await res.json();
+                  if (data.results) {
+                    const merged = [];
+                    for (const chunk of data.results) {
+                      try {
+                        const ev = JSON.parse(chunk);
+                        if (ev.type === "result") {
+                          merged.push(...responseToMessages(ev.data));
+                        }
+                      } catch {}
+                    }
+                    const next = [...messages, ...merged];
+                    setMessages(next);
+                    persistChat(sessionId, next);
+                  }
+                } catch (err) {
+                  console.error(err);
+                }
+              }}
+              title="Edit last user message and regenerate"
+              aria-label="Edit"
+              disabled={!sessionId || loading}
+            >
+              Edit
+            </button>
+
+            <button
+              type="button"
+              className="icon-btn grouped"
+              onClick={async () => {
+                if (!sessionId) return;
+                if (!confirm("Delete last user turn?")) return;
+                try {
+                  const res = await fetch(`${backendUrl}/api/chat/delete`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ session_id: sessionId, index: -1 }),
+                  });
+                  if (res.ok) {
+                    // refresh history from server
+                    const msgs = await fetch(`${historyUrl}?session_id=${encodeURIComponent(sessionId)}&limit=80`).then((r) => r.json()).catch(() => ({ messages: [] }));
+                    const next = turnsToMessages(msgs.messages || []);
+                    setMessages(next);
+                    persistChat(sessionId, next);
+                  } else {
+                    alert("Failed to delete turn");
+                  }
+                } catch (err) {
+                  console.error(err);
+                }
+              }}
+              title="Delete last user turn"
+              aria-label="Delete last"
+              disabled={!sessionId || loading}
+            >
+              Delete
+            </button>
+
+            <button
+              type="button"
+              className="icon-btn grouped"
+              onClick={() => {
+                if (!sessionId) return;
+                const payload = { id: sessionId, title: activeChat?.title, messages };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${activeChat?.title || sessionId}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              title="Export conversation JSON"
+              aria-label="Export"
+              disabled={!sessionId}
+            >
+              Export
+            </button>
+          </div>
         </header>
 
         <div className="chat-container">
@@ -605,7 +812,171 @@ function App() {
                 </div>
               ) : (
                 <div key={index} className={`message ${message.sender}`}>
-                  {index === streamingIndex && message.streaming ? streamingText : message.text}
+                  {index === streamingIndex && message.streaming ? (
+                    streamingText
+                  ) : (
+                    // Render code fences as pre blocks
+                    (typeof message.text === "string" && message.text.match(/```[\s\S]*?```/)) ? (
+                      <div className="code-block">
+                        {message.text.split(/```(?:\w+)?/).map((part, i) => (
+                          <pre key={i} className="code-snippet">{part}</pre>
+                        ))}
+                      </div>
+                    ) : (
+                      message.text
+                    )
+                  )}
+
+                  {message.sender === "user" && message.turnIndex != null && (
+                    <div className="message-actions user-actions">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          // regenerate this user turn
+                          try {
+                            const res = await fetch(`${backendUrl}/api/chat/regenerate`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ session_id: sessionId, index: message.turnIndex }),
+                            });
+                            const data = await res.json();
+                            if (data.results) {
+                              const merged = [];
+                              for (const chunk of data.results) {
+                                try {
+                                  const ev = JSON.parse(chunk);
+                                  if (ev.type === "result") merged.push(...responseToMessages(ev.data));
+                                } catch {}
+                              }
+                              const next = [...messages, ...merged];
+                              setMessages(next);
+                              persistChat(sessionId, next);
+                            }
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        title="Regenerate this message"
+                      >
+                        Regenerate
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const newText = window.prompt("Edit message:", message.text || "");
+                          if (!newText) return;
+                          try {
+                            const res = await fetch(`${backendUrl}/api/chat/edit`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ session_id: sessionId, index: message.turnIndex, new_message: newText }),
+                            });
+                            const data = await res.json();
+                            if (data.results) {
+                              const merged = [];
+                              for (const chunk of data.results) {
+                                try {
+                                  const ev = JSON.parse(chunk);
+                                  if (ev.type === "result") merged.push(...responseToMessages(ev.data));
+                                } catch {}
+                              }
+                              const next = [...messages, ...merged];
+                              setMessages(next);
+                              persistChat(sessionId, next);
+                            }
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        title="Edit this message and regenerate"
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm("Delete this message?")) return;
+                          try {
+                            const res = await fetch(`${backendUrl}/api/chat/delete`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ session_id: sessionId, index: message.turnIndex }),
+                            });
+                            if (res.ok) {
+                              const msgs = await fetch(`${historyUrl}?session_id=${encodeURIComponent(sessionId)}&limit=80`).then((r) => r.json()).catch(() => ({ messages: [] }));
+                              const next = turnsToMessages(msgs.messages || []);
+                              setMessages(next);
+                              persistChat(sessionId, next);
+                            } else {
+                              alert("Delete failed");
+                            }
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        title="Delete this message"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+
+                  {message.sender === "bot" && (
+                    <div className="message-actions">
+                      <button
+                        type="button"
+                        className={`reaction-btn ${message.reaction === "up" ? "active" : ""}`}
+                        onClick={async () => {
+                          const next = [...messages];
+                          const newReaction = next[index].reaction === "up" ? null : "up";
+                          next[index] = { ...next[index], reaction: newReaction };
+                          setMessages(next);
+                          if (sessionId) {
+                            try {
+                              await fetch(`${backendUrl}/api/chat/reaction`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ session_id: sessionId, index: message.turnIndex, reaction: newReaction }),
+                              });
+                            } catch (err) {
+                              console.error(err);
+                            }
+                            persistChat(sessionId, next);
+                          }
+                        }}
+                        title="Like"
+                      >
+                        👍
+                      </button>
+                      <button
+                        type="button"
+                        className={`reaction-btn ${message.reaction === "down" ? "active" : ""}`}
+                        onClick={async () => {
+                          const next = [...messages];
+                          const newReaction = next[index].reaction === "down" ? null : "down";
+                          next[index] = { ...next[index], reaction: newReaction };
+                          setMessages(next);
+                          if (sessionId) {
+                            try {
+                              await fetch(`${backendUrl}/api/chat/reaction`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ session_id: sessionId, index: message.turnIndex, reaction: newReaction }),
+                              });
+                            } catch (err) {
+                              console.error(err);
+                            }
+                            persistChat(sessionId, next);
+                          }
+                        }}
+                        title="Dislike"
+                      >
+                        👎
+                      </button>
+                    </div>
+                  )}
                 </div>
               )
             )}

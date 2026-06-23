@@ -131,6 +131,25 @@ class ChatService(IChatService):
                                 session_id,
                                 ChatTurn(role="assistant", content=json.dumps(state_update["result"])),
                             )
+                        # After storing assistant turn, optionally compress older history
+                        try:
+                            if session_id and self.memory and hasattr(self.memory, "max_turns"):
+                                history = self.memory.get_history(session_id, limit=200)
+                                # Only attempt summarization when history grows beyond configured max_turns
+                                if len(history) > getattr(self.memory, "max_turns", 50):
+                                    from src.services.conversation_context import summarize_history
+
+                                    new_history, compressed = summarize_history(
+                                        history, llm_client=self.llm_client, llm_model=self.llm_model, keep_recent=6
+                                    )
+                                    if compressed:
+                                        # Replace stored history with compressed version
+                                        try:
+                                            self.memory.set_history(session_id, new_history)
+                                        except Exception:
+                                            logger.exception("Failed to set compressed history")
+                        except Exception:
+                            logger.exception("History summarization failed")
                         yield json.dumps({
                             "type": "result",
                             "data": state_update["result"],

@@ -47,6 +47,26 @@ class RedisMemory:
                 continue
         return out
 
+    def set_history(self, session_id: str, turns: List[ChatTurn]) -> None:
+        """
+        Replace the stored history for a session with the provided turns.
+
+        This implementation rewrites the Redis list atomically by deleting and
+        pushing the new items. It's acceptable because history sizes are small.
+        """
+        key = self._key(session_id)
+        # Remove existing list
+        self._client.delete(key)
+        if not turns:
+            return
+        # Push all turns in order
+        pipeline = self._client.pipeline()
+        for t in turns:
+            pipeline.rpush(key, json.dumps({"role": t.role, "content": t.content}))
+        # Ensure we trim to max_turns
+        pipeline.ltrim(key, -self.max_turns, -1)
+        pipeline.execute()
+
     @staticmethod
     def _key(session_id: str) -> str:
         return f"chat:{session_id}"

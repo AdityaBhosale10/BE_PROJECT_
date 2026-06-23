@@ -95,6 +95,20 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
 
 
+class RegenerateRequest(BaseModel):
+    """Request to regenerate a response for a previous user message."""
+    session_id: Optional[str] = None
+    # Index of the target user turn (0-based from oldest). If omitted, -1 = last user turn.
+    index: Optional[int] = Field(default=-1)
+
+
+class EditRequest(BaseModel):
+    """Request to edit a previous user message and regenerate response."""
+    session_id: str
+    index: int = Field(..., description="0-based index of the user turn to edit (from oldest)")
+    new_message: str = Field(..., description="Replacement user message content")
+
+
 class ChatResponse(BaseModel):
     """
     New chat response shape (single JSON, non-streaming).
