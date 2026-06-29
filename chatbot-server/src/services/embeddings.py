@@ -7,7 +7,7 @@ import logging
 from typing import List
 
 import cohere
-from sentence_transformers import SentenceTransformer  # type: ignore
+# Import sentence_transformers lazily to avoid import-time failures
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,11 @@ class EmbeddingsService:
             self.client = cohere.Client(api_key=kwargs.get("api_key"))
         elif provider_type == "sentence_transformers":
             model_name = kwargs.get("model_name") or "sentence-transformers/all-MiniLM-L6-v2"
+            try:
+                from sentence_transformers import SentenceTransformer  # type: ignore
+            except Exception as e:
+                logger.warning("sentence_transformers unavailable: %s", e)
+                raise
             self.client = SentenceTransformer(model_name)
         elif provider_type == "mock":
             self.client = None

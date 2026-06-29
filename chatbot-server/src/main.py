@@ -61,6 +61,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.chat_service = chat_service
         app.state.vector_store = vector_store
         app.state.memory = container.memory
+        # optional multimodal service
+        app.state.multimodal_service = getattr(container, "multimodal_service", None)
         
         logger.info("Application initialized successfully")
         
@@ -112,23 +114,9 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(vector_router)
 
-    # Normalize and flatten routes list for compatibility across FastAPI versions
-    # Some FastAPI/Starlette versions expose nested _IncludedRouter objects
-    # that don't have a `path` attribute but do expose a `.routes` list.
-    try:
-        flat = []
-        for r in app.routes:
-            if hasattr(r, "path"):
-                flat.append(r)
-            elif hasattr(r, "routes"):
-                for sub in getattr(r, "routes") or []:
-                    if hasattr(sub, "path"):
-                        flat.append(sub)
-        if flat:
-            app.router.routes = flat
-    except Exception:
-        # best-effort: if something goes wrong, leave routes as-is
-        pass
+    # Manual route flattening is disabled as modern FastAPI/Starlette handles
+    # _IncludedRouter mapping natively. Overwriting app.router.routes here
+    # causes API routes to be discarded.
 
     return app
 

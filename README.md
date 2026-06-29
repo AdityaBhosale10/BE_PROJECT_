@@ -14,28 +14,29 @@ AI-powered shopping assistant platform for real-time product search with context
 
 ![ProductGPT Demo](./assets/picksmart-demo.gif)
 
-
 ProductGPT is an AI-powered product discovery platform that leverages large language models and intelligent agents to provide real-time product search, contextual question-answering, and personalized product recommendations. The system integrates a Retrieval-Augmented Generation (RAG) architecture with a search agent, also known as Hybrid RAG, for product discovery across multiple e-commerce marketplaces.
 
-
 ## 🚀 Features
-|   Name  | Description |
-|-------|-------------|
-| **Ask a question about a product** | Submit a query to get detailed information, including specifications, pricing, and availability. |
-| **Search multiple marketplaces and rank the results**| The system aggregates product listings from various online marketplaces, compares and ranks them based on relevance, price, and customer reviews. |
-| **Receive personalized recommendations** |  Get AI-driven suggestions tailored to users' preferences, helping users make informed decisions. |
+
+| Name                                                  | Description                                                                                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ask a question about a product**                    | Submit a query to get detailed information, including specifications, pricing, and availability.                                                  |
+| **Search multiple marketplaces and rank the results** | The system aggregates product listings from various online marketplaces, compares and ranks them based on relevance, price, and customer reviews. |
+| **Receive personalized recommendations**              | Get AI-driven suggestions tailored to users' preferences, helping users make informed decisions.                                                  |
 
 ## ⚡Core Capabilities
-|  Function | Description |
-|-----------|-------------|
-|**Natural Language Query Processing** | Advanced query decomposition and semantic analysis
-| **Vector Database Integration** | Efficient data ingestion and storage for embedding-based semantic retrieval.
-| **Distributed Real-time Search** | Multi-marketplace product discovery with parallel processing
-| **Intelligent Product Ranking** | AI-powered relevance scoring and personalization
-| **Context-Aware Recommendations** | Detailed answers with product suggestions
-| **Scalable Data Processing** | Event-driven architecture for high-throughput data handling
+
+| Function                              | Description                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| **Natural Language Query Processing** | Advanced query decomposition and semantic analysis                           |
+| **Vector Database Integration**       | Efficient data ingestion and storage for embedding-based semantic retrieval. |
+| **Distributed Real-time Search**      | Multi-marketplace product discovery with parallel processing                 |
+| **Intelligent Product Ranking**       | AI-powered relevance scoring and personalization                             |
+| **Context-Aware Recommendations**     | Detailed answers with product suggestions                                    |
+| **Scalable Data Processing**          | Event-driven architecture for high-throughput data handling                  |
 
 ## 🛠️ Tech Stack
+
 - **Frontend**: React, Vite
 - **Backend**: FastAPI
 - **Build Tool**: Vite (migrated from CRA)
@@ -48,17 +49,20 @@ ProductGPT is an AI-powered product discovery platform that leverages large lang
 ProductGPT employs a modern distributed architecture that combines frontend and backend services through containerized deployment. The system is designed for scalability, maintainability, and real-time responsiveness.
 
 ### Frontend Layer
+
 - **Framework**: React.js with TypeScript
 - **State Management**: Redux for predictable state container
 - **API Integration**: Axios for HTTP client
 - **Styling**: Custom CSS with modern SaaS design principles
 
 ### Backend Services
+
 - **API Framework**: FastAPI with asynchronous request handling and high-performance routing
 - **Vector Store**: MongoDB for efficient similarity search and embedding storage
 - **Search Engine**: Tavily API integration for real-time and accurate web search capabilities
 
 ### AI Components
+
 - **LLM Integration**: Groq API for high-performance inference
 - **Agent Framework**: LangChain for composable AI components
 - **Workflow Orchestration**: LangGraph for agent coordination and planning
@@ -84,12 +88,12 @@ self.graph = graph.compile(checkpointer=checkpointer)
 
 The search and analyst agent progresses through the following sequential states:
 
-| State | Name | Description |
-|:-----:|-------|-------------|
-|   1   | 🔍 **Query Analysis State** | Analyzes and decomposes the user query before identifying search intent and extracts key product attributes, serving as the entry point for all search requests |
-|   2   | 🛒 **Online Shop Search State** | Performs search across multiple online websites, retrieves initial product information from available sources, and gathers raw product data for further analysis |
-|   3   | ⭐ **Analysis and Ranking State** | Evaluates and ranks products using multiple criteria, prioritizing results based on relevance and quality to deliver the most appropriate options to users |
-|   4   | 🔗 **Product Source Search State** | Extends search to discover additional product sources across e-commerce platforms, provides a direct purchasing link, and validates product availability |
+| State | Name                               | Description                                                                                                                                                      |
+| :---: | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|   1   | 🔍 **Query Analysis State**        | Analyzes and decomposes the user query before identifying search intent and extracts key product attributes, serving as the entry point for all search requests  |
+|   2   | 🛒 **Online Shop Search State**    | Performs search across multiple online websites, retrieves initial product information from available sources, and gathers raw product data for further analysis |
+|   3   | ⭐ **Analysis and Ranking State**  | Evaluates and ranks products using multiple criteria, prioritizing results based on relevance and quality to deliver the most appropriate options to users       |
+|   4   | 🔗 **Product Source Search State** | Extends search to discover additional product sources across e-commerce platforms, provides a direct purchasing link, and validates product availability         |
 
 The workflow follows a linear progression through these states, from which each state is built upon the results of the previous states.
 
@@ -160,17 +164,18 @@ ProductGPT
         └── utils                   # Utility functions
             └── file_utils.py       # File handling utilities
 ```
-   
+
 ## ⚙️ Configuration
 
 ### Environment Variables
-Create ```.env.local``` file under ```chatbot-app```  and add following host to connect to your local host
+
+Create `.env.local` file under `chatbot-app` and add following host to connect to your local host
 
 ```env
 VITE_BACKEND_URL=http://localhost:8000
 ```
 
-Create ```.env``` file under ```chatbot-server``` folder and add API keys and MongoDB configuration as below:
+Create `.env` file under `chatbot-server` folder and add API keys and MongoDB configuration as below:
 
 ```env
 GROQ_API_KEY="<API_KEY>"
@@ -181,6 +186,7 @@ MONGO_PASSWORD="<PASSWORD>"
 MONGO_CLUSTER="picksmart-cluster"
 MONGO_DATABASE="picksmart"
 ```
+
 - To get Groq api key: https://console.groq.com/keys
 - To get Tavily api key: https://tavily.com/
 - To get Cohere api key: https://dashboard.cohere.com/
@@ -188,7 +194,8 @@ MONGO_DATABASE="picksmart"
 
 ### Model Configuration
 
-Configure the LLM model in ```model.yaml``` file:
+Configure the LLM model in `model.yaml` file:
+
 ```yaml
 LLM: <LLM_MODEL>
 ```
@@ -196,23 +203,27 @@ LLM: <LLM_MODEL>
 ## 🚢 Deployment
 
 ### Docker Deployment
+
 The application supports containerized deployment using Docker and Docker Compose for simplified orchestration.
 
 - **Docker**: Multi-service orchestration with Docker Compose
 - **Environment Variables**: Managed via `.env` files, using `VITE_BACKEND_URL` for frontend-backend communication
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/phrugsa-limbunlom/ProductGPT.git
 cd ProductGPT
 ```
 
 2. Create the network:
+
 ```bash
 docker network create chatbot-network
 ```
 
 3. Deploy services:
+
 ```bash
 docker-compose up --build
 ```
@@ -222,31 +233,39 @@ The application will be accessible at `localhost:3000`.
 ### Manual Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/phrugsa-limbunlom/ProductGPT.git
 cd ProductGPT
 ```
 
 2. Install backend dependencies:
+
 ```bash
 pip install -r /chatbot-server/requirements.txt
 ```
 
 3. Install frontend dependencies:
+
 ```bash
 cd chatbot-app
 npm install
 ```
+
 4. Launch backend server:
+
 ```bash
 uvicorn src.main:app --reload --env-file .env
 ```
+
 5. Start frontend application:
+
 ```bash
 npm run dev
 ```
 
 ## 💻 System Requirements
+
 - Python 3.8+
 - Node.js 14+
 - Docker 20.10+
@@ -261,6 +280,7 @@ npm run dev
 The fastest way to get ProductGPT running is with Docker Compose
 
 1. Clone the repository and navigate to the project
+
    ```bash
    git clone https://github.com/phrugsa-limbunlom/ProductGPT.git
    cd ProductGPT
@@ -269,6 +289,7 @@ The fastest way to get ProductGPT running is with Docker Compose
 2. Set up your environment variables (see Configuration section)
 
 3. Start all services
+
    ```bash
    docker-compose up --build
    ```
@@ -292,9 +313,40 @@ Key API endpoints
 
 ### Backend Development
 
+## Multimodal Image Search (PoC)
+
+This project includes a proof-of-concept for image-based semantic search.
+
+Endpoints:
+
+- `POST /api/vector/multimodal/search` — multipart form: `image` file or `image_url` plus optional `query` string. Returns nearest documents from the multimodal FAISS indexes.
+- `POST /api/vector/images/upload` — multipart form: `image` file and `title`; indexes the image into the multimodal image FAISS index.
+
+Notes:
+
+- The backend uses CLIP (`open-clip-torch`) for image embeddings when available. To run full multimodal features locally you must install `pillow` and `open-clip-torch` (see `chatbot-server/requirements.txt`).
+- For faster PoC or CI, the endpoints can be tested with a fake `multimodal_service` (unit tests use a fake service).
+
+Example curl (search):
+
+```bash
+curl -X POST "http://localhost:8000/api/vector/multimodal/search" \
+   -F "image=@/path/to/photo.jpg" \
+   -F "query=red headphones"
+```
+
+Example curl (upload/index):
+
+```bash
+curl -X POST "http://localhost:8000/api/vector/images/upload" \
+   -F "title=My Photo" \
+   -F "image=@/path/to/photo.jpg"
+```
+
 To develop the backend without Docker
 
 1. Install Python dependencies
+
    ```bash
    pip install -r chatbot-server/requirements.txt
    ```
@@ -314,6 +366,7 @@ The server will start with hot-reload enabled for development.
 To develop the frontend with live reload
 
 1. Install Node dependencies
+
    ```bash
    cd chatbot-app
    npm install
@@ -359,4 +412,5 @@ If you encounter exit code 1 when running Docker Compose
 - Confirm rate limits have not been exceeded
 
 ## 📜 License
+
 ProductGPT is released under the MIT License. See the [LICENSE](https://github.com/phrugsa-limbunlom/ProductGPT/blob/main/LICENSE) file for more details.

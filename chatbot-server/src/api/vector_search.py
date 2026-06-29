@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Request, Query
 from pydantic import BaseModel
+from fastapi import UploadFile, File, Form, HTTPException
 
 from src.interfaces import IVectorStoreService
 
@@ -41,6 +42,10 @@ def get_vector_store(request: Request) -> IVectorStoreService:
         IVectorStoreService instance from app state
     """
     return request.app.state.vector_store
+
+
+def get_multimodal_service(request: Request):
+    return getattr(request.app.state, "multimodal_service", None)
 
 
 @router.post("/search")
@@ -107,3 +112,53 @@ async def vector_db_status(
         "database": "MongoDB Atlas",
         "has_indexes": True,
     }
+
+
+@router.post("/multimodal/search")
+async def multimodal_search(
+    query: str = Form(""),
+    image: UploadFile | None = File(None),
+    image_url: str | None = Form(None),
+    top_k: int = Form(5),
+    multimodal_service = Depends(get_multimodal_service),
+):
+    """Search using text + optional image. Accepts multipart file upload or image_url."""
+    if multimodal_service is None:
+        raise HTTPException(status_code=501, detail="Multimodal search not configured")
+
+    image_bytes = None
+    if image is not None:
+        image_bytes = await image.read()
+
+    try:
+        results = multimodal_service.search(
+            query or "",
+            top_k=top_k,
+            image_query_url=image_url,
+            image_query_bytes=image_bytes,
+        )
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        logger.error("Error during multimodal search: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/images/upload")
+async def upload_image(
+    title: str = Form(""),
+    image: UploadFile = File(...),
+    image_url: str | None = Form(None),
+    multimodal_service = Depends(get_multimodal_service),
+):
+    """Upload and index a single image + metadata into multimodal index."""
+    if multimodal_service is None:
+        raise HTTPException(status_code=501, detail="Multimodal service not configured")
+
+    content = await image.read()
+    product = {"title": title or image.filename, "name": title or image.filename, "image_url": image_url or ""}
+    try:
+        idx = multimodal_service.add_image(product=product, image_bytes=content, image_url=image_url)
+        return {"ok": True, "id": idx}
+    except Exception as e:
+        logger.error("Failed to upload image: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

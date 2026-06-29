@@ -9,10 +9,8 @@ import {
   PanelLeftClose,
   Menu,
   ArrowLeft,
-  RefreshCw,
-  Edit2,
-  Download,
-  Sun,
+  Image as ImageIcon,
+  Loader2,
 } from "lucide-react";
 import "./App.css";
 
@@ -272,11 +270,15 @@ function App() {
   const [streamingText, setStreamingText] = useState("");
   const [messageQueue, setMessageQueue] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  // pendingImage holds { file, previewUrl } while user has picked an image but not yet submitted
+  const [pendingImage, setPendingImage] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebar, setMobileSidebar] = useState(false);
+  const imageInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
   const streamUrl = `${backendUrl}/api/chat/stream`;
   const historyUrl = `${backendUrl}/api/chat/history`;
 
@@ -462,9 +464,27 @@ function App() {
 
   const handleClosePanel = useCallback(() => setSelectedProduct(null), []);
 
+  // Clear pending image and revoke object URL to avoid memory leaks
+  const clearPendingImage = useCallback(() => {
+    setPendingImage((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+    if (imageInputRef.current) imageInputRef.current.value = null;
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    // Allow submit with image even if text is empty
+    if ((!input.trim() && !pendingImage) || loading) return;
+
+    // If there's a pending image, delegate to the image search handler
+    if (pendingImage) {
+      const file = pendingImage.file;
+      clearPendingImage();
+      await handleImageSearch(file);
+      return;
+    }
 
     let chatId = sessionId;
     if (!chatId) {
@@ -577,6 +597,57 @@ function App() {
     } finally {
       setLoading(false);
       setProgressMessage("");
+    }
+  };
+
+  const handleImageSearch = async (file) => {
+    if (!file) return;
+
+    // Determine or create a chat session
+    let chatId = sessionId;
+    if (!chatId) {
+      chatId = createId();
+      const chat = { id: chatId, title: "Image search", createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
+      setStore((prev) => { const next = { activeId: chatId, chats: [chat, ...prev.chats] }; saveStore(next); return next; });
+    }
+
+    const queryText = input.trim();
+    // Create a user message that includes caption text + an image indicator
+    const imagePreviewUrl = URL.createObjectURL(file);
+    const userMessage = {
+      text: queryText || "Image search",
+      sender: "user",
+      imageSrc: imagePreviewUrl,
+    };
+    const messagesWithUser = [...messages, userMessage];
+    setMessages(messagesWithUser);
+    persistChat(chatId, messagesWithUser, titleFromMessage(queryText || "Image search"));
+    setInput("");
+    setImageUploading(true);
+
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      fd.append("query", queryText || "");
+      fd.append("top_k", "5");
+      const res = await fetch(`${backendUrl}/api/vector/multimodal/search`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) throw new Error(`Image search failed: ${res.status}`);
+      const data = await res.json();
+      const items = (data.results || []).map((r) => normalizeProduct(r.document || r));
+      const prodMsg = { sender: "products", items };
+      const next = [...messagesWithUser, prodMsg];
+      setMessages(next);
+      persistChat(chatId, next);
+    } catch (err) {
+      console.error(err);
+      const withError = [...messagesWithUser, { text: "Image search failed. Please try again.", sender: "error" }];
+      setMessages(withError);
+      persistChat(chatId, withError);
+    } finally {
+      setImageUploading(false);
     }
   };
 
@@ -812,6 +883,12 @@ function App() {
                 </div>
               ) : (
                 <div key={index} className={`message ${message.sender}`}>
+                  {/* Image thumbnail for image-search user messages */}
+                  {message.sender === "user" && message.imageSrc && (
+                    <div className="message-image-preview">
+                      <img src={message.imageSrc} alt="Uploaded" />
+                    </div>
+                  )}
                   {index === streamingIndex && message.streaming ? (
                     streamingText
                   ) : (
@@ -996,24 +1073,74 @@ function App() {
           </div>
 
           <form onSubmit={handleSubmit} className="input-form">
+            {/* ── Pending image preview strip ── */}
+            {pendingImage && (
+              <div className="image-preview-strip">
+                <div className="image-preview-thumb">
+                  <img src={pendingImage.previewUrl} alt="Preview" />
+                  <button
+                    type="button"
+                    className="image-preview-remove"
+                    onClick={clearPendingImage}
+                    aria-label="Remove image"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                <span className="image-preview-name">{pendingImage.file.name}</span>
+              </div>
+            )}
+
             <div className="input-wrapper">
+              {/* Hidden file input */}
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  // Revoke any existing preview URL
+                  if (pendingImage?.previewUrl) URL.revokeObjectURL(pendingImage.previewUrl);
+                  setPendingImage({ file: f, previewUrl: URL.createObjectURL(f) });
+                }}
+              />
+              {/* Image upload button */}
+              <button
+                type="button"
+                className="image-upload-btn"
+                title="Attach an image"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={loading || imageUploading}
+                aria-label="Upload image"
+              >
+                {imageUploading ? <Loader2 size={18} className="spin-icon" /> : <ImageIcon size={18} />}
+              </button>
+
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Message ProductGPT…"
-                disabled={loading}
+                placeholder={pendingImage ? "Add a caption (optional)…" : "Message ProductGPT…"}
+                disabled={loading || imageUploading}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
               />
               <button
                 type="submit"
-                disabled={loading || !input.trim()}
+                disabled={loading || imageUploading || (!input.trim() && !pendingImage)}
                 aria-label="Send message"
                 className="send-button"
               >
-                <Send size={16} />
+                {loading ? <Loader2 size={16} className="spin-icon" /> : <Send size={16} />}
               </button>
             </div>
-            <p className="input-hint">ProductGPT remembers context within each chat when Redis is enabled.</p>
+            <p className="input-hint">ProductGPT · Context is scoped to each conversation</p>
           </form>
         </div>
       </main>

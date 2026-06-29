@@ -59,3 +59,15 @@ class ClipEmbeddingsService:  # pragma: no cover
             feats = feats / feats.norm(dim=-1, keepdim=True)
         return feats[0].detach().cpu().float().numpy().tolist()
 
+    def embed_image_bytes(self, content: bytes) -> List[float]:  # pragma: no cover
+        """Embed image from raw bytes."""
+        torch = self._torch
+        Image = self._Image
+
+        img = Image.open(io.BytesIO(content)).convert("RGB")
+        image_tensor = self.preprocess(img).unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            feats = self.model.encode_image(image_tensor)
+            feats = feats / feats.norm(dim=-1, keepdim=True)
+        return feats[0].detach().cpu().float().numpy().tolist()
+

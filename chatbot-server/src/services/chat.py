@@ -72,12 +72,21 @@ class ChatService(IChatService):
             logger.warning("Relevance check failed, allowing query: %s", exc)
             return True
 
+    # Maximum recent turns to include in conversation context sent to LLM.
+    # Keeping this low avoids 413 token-limit errors on Groq's free tier.
+    MAX_HISTORY_TURNS = 4
+    # Hard character cap for the full context string embedded in prompts.
+    MAX_CONTEXT_CHARS = 1500
+
     async def stream_chat(self, query: str, session_id: Optional[str] = None):
         try:
             conversation_context = ""
             if session_id and self.memory:
-                history = self.memory.get_history(session_id, limit=12)
+                history = self.memory.get_history(session_id, limit=self.MAX_HISTORY_TURNS)
                 conversation_context = build_conversation_context(history, exclude_last_user=True)
+                # Hard-truncate to avoid exceeding token limits
+                if len(conversation_context) > self.MAX_CONTEXT_CHARS:
+                    conversation_context = conversation_context[-self.MAX_CONTEXT_CHARS:]
 
             if not self.is_query_relevant(query):
                 yield json.dumps({

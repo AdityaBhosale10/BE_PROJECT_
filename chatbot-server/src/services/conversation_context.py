@@ -88,9 +88,19 @@ def summarize_assistant_turn(content: str) -> str:
     return content[:500]
 
 
-def build_conversation_context(history: List[ChatTurn], exclude_last_user: bool = True) -> str:
+def build_conversation_context(
+    history: List[ChatTurn],
+    exclude_last_user: bool = True,
+    max_chars: int = 1500,
+) -> str:
     """
     Format prior turns for the LLM (excludes the latest user message when exclude_last_user=True).
+
+    Args:
+        history: List of chat turns to process.
+        exclude_last_user: If True, skip the final user turn (it is already the live query).
+        max_chars: Hard cap on the returned string length. Most-recent context is preserved
+                   by slicing from the end, so older turns are discarded first.
     """
     if not history:
         return ""
@@ -99,10 +109,14 @@ def build_conversation_context(history: List[ChatTurn], exclude_last_user: bool 
     lines: List[str] = []
     for turn in turns:
         if turn.role == "user":
-            lines.append(f"User: {turn.content}")
+            lines.append(f"User: {turn.content[:400]}")
         elif turn.role == "assistant":
             lines.append(f"Assistant: {summarize_assistant_turn(turn.content)}")
-    return "\n".join(lines).strip()
+    result = "\n".join(lines).strip()
+    # Keep the most-recent portion if over the char cap
+    if len(result) > max_chars:
+        result = result[-max_chars:]
+    return result
 
 
 def build_effective_user_query(user_query: str, conversation_context: str) -> str:

@@ -21,6 +21,13 @@ services:
     networks:
       - chatbot-network
 
+  productgpt-redis:
+    image: redis:7-alpine
+    container_name: productgpt-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - chatbot-network
+
 networks:
-  chatbot-network:
-    external: true
+  chatbot-network: {}

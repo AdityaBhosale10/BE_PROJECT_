@@ -204,6 +204,31 @@ class DependencyContainer:
                 vector_db_repo=self._vector_db_repo,
                 embeddings_service=self._embeddings_service,
             )
+        # Optional multimodal (CLIP + separate FAISS indexes)
+        try:
+            from src.services.multimodal_vector_store import MultimodalVectorStoreService
+            from src.services.clip_embeddings import ClipEmbeddingsService
+            # use separate FAISS dirs for text and images
+            text_repo = FaissRepository(os.path.join(self.config.faiss_dir, "text"))
+            image_repo = FaissRepository(os.path.join(self.config.faiss_dir, "image"))
+            clip_emb = ClipEmbeddingsService()
+            self._multimodal_service = MultimodalVectorStoreService(
+                text_repo=text_repo,
+                image_repo=image_repo,
+                text_embeddings=self._embeddings_service,
+                clip_embeddings=clip_emb,
+            )
+            # Auto-build multimodal FAISS indexes from bundled seed catalog when missing.
+            if self._multimodal_service.ensure_indexes():
+                logger.info("Multimodal FAISS indexes ready")
+            else:
+                logger.warning(
+                    "Multimodal FAISS indexes not built; image search will return empty results until indexes exist"
+                )
+            logger.info("Initialized MultimodalVectorStoreService")
+        except Exception as e:
+            logger.info("Multimodal service not available: %s", e)
+            self._multimodal_service = None
     
     @property
     def llm_client(self) -> LLMClientInterface:
@@ -267,6 +292,11 @@ class DependencyContainer:
             source_search=self._source_search,
             memory=self._memory,
         )
+
+    @property
+    def multimodal_service(self):
+        """Optional MultimodalVectorStoreService (CLIP + FAISS)."""
+        return self._multimodal_service
 
 
 def get_dependency_container() -> DependencyContainer:

@@ -89,7 +89,7 @@ function App() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const messagesEndRef = useRef(null);
 
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "";
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
   const endpoint = "/api/chat/stream";
   const url = `${backendUrl}${endpoint}`;
 
